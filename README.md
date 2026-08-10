@@ -11,16 +11,7 @@ A desktop application that tracks Steam game prices and sends notifications when
 - Run on startup (Also can be disabled in settings)
 - Popular searches feed
 
-## How to run from source
 
-1. Install Python 3.8+
-2. Install requirements: `pip install PyQt5`
-3. Run the app: `python -m steamsale.main`
-
-## How to build the .exe
-
-Make sure PyInstaller is installed (`pip install pyinstaller`), then run:
-
-``
-python -m PyInstaller --noconfirm --onefile --windowed --name "SteamSaleTracker" --icon "steamsale/steamsale.ico" --add-data "steamsale/steamsale.ico;steamsale" --add-data "steamsale/fartsound.mp3;steamsale" --add-data "steamsale/ButterflyDing.mp3;steamsale" --add-data "steamsale/barkfart.mp3;steamsale" run.py
-``
+## Additional note
+This requires Python 3.8+ to run from source
+- The UI was also vibecoded because I don't know how to make UI's on python properly haha
