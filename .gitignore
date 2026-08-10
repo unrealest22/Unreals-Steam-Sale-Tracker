@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.spec
+
+# PyInstaller
+build/
+dist/
+
+# Inno Setup
+InstallerOutput/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# App generated files (users will generate these themselves)
+*.wav
