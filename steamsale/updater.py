@@ -44,7 +44,7 @@ class UpdateChecker(QObject):
                 else:
                     self.no_update.emit()
             except Exception as e:
-                # Silently fail or emit error. We don't want to crash the app.
+                # Silently fail or emit error.
                 print(f"[WARN] Update check failed: {e}")
                 self.no_update.emit() # Emit no_update so the UI just says "Up to date" instead of erroring
         
@@ -80,8 +80,7 @@ def download_and_install(download_url, parent_window):
 
         progress.close()
 
-        # Create a batch script to replace the exe
-        # It waits for the current app to close, deletes the old exe, renames the new one, and starts it.
+        
         batch_path = os.path.join(temp_dir, "steam_updater.bat")
         batch_content = f"""
 @echo off
