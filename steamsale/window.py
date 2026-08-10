@@ -4,9 +4,10 @@ import threading
 
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton,
-    QFrame, QStackedWidget, QSystemTrayIcon, QMenu, QAction, QApplication
+    QFrame, QStackedWidget, QSystemTrayIcon, QMenu, QAction, QApplication, QMessageBox,
+    QGraphicsOpacityEffect
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
 from PyQt5.QtGui import QIcon, QColor, QFont, QPixmap, QCursor, QPainter
 
 from .config import format_price
@@ -14,6 +15,7 @@ from .styles import STEAM_STYLESHEET, slide_in_from_right
 from .sounds import play_notification_sound
 from .pages import SearchPage, TrackedPage, SettingsPage
 from .checker import PriceChecker
+from .updater import UpdateChecker, download_and_install
 
 class MainWindow(QMainWindow):
     def __init__(self, config, start_in_tray=False):
@@ -30,7 +32,7 @@ class MainWindow(QMainWindow):
         app_title = "Unreal's Sale Tracker"
         self.setWindowTitle(app_title)
         
-                # ── Load Custom Icon (steamsale.ico) ──
+        # ── Load Custom Icon (steamsale.ico) ──
         if getattr(sys, 'frozen', False):
             base_path = os.path.join(sys._MEIPASS, "steamsale")
         else:
@@ -87,6 +89,19 @@ class MainWindow(QMainWindow):
         self.status_label.setStyleSheet("padding: 12px 16px;")
         nav_layout.addWidget(self.status_label)
         
+        # ── Credits ──
+        credits_label = QLabel(
+            'Unreal\'s Sale Tracker v0.2<br>'
+            'Original repo: <a href="https://github.com/unrealest22/Unreals-Steam-Sale-Tracker" style="color: #66c0f4;">GitHub</a>'
+        )
+        credits_label.setOpenExternalLinks(True)
+        credits_label.setTextFormat(Qt.RichText)
+        credits_label.setObjectName("statusLabel")
+        credits_label.setStyleSheet("padding: 0px 16px 16px 16px;")
+        credits_label.setWordWrap(True)
+        credits_label.setCursor(QCursor(Qt.PointingHandCursor))
+        nav_layout.addWidget(credits_label)
+        
         main_layout.addWidget(nav_bar)
         
         self.stack = QStackedWidget()
@@ -136,10 +151,26 @@ class MainWindow(QMainWindow):
         self.nav_buttons[0].setChecked(True)
         self.stack.setCurrentIndex(0)
         
+        # ── Check for updates on startup ──
+        self.update_checker = UpdateChecker()
+        self.update_checker.update_found.connect(self._on_update_found)
+        self.update_checker.no_update.connect(lambda: self._update_status("Up to date."))
+        self.update_checker.update_error.connect(lambda e: self._update_status("Update check failed."))
+        self.update_checker.check_for_updates()
+        
         if start_in_tray:
             self.hide()
         else:
             self.show()
+
+    def _on_update_found(self, version, download_url):
+        self._update_status(f"Update {version} available!")
+        reply = QMessageBox.question(self, 'Update Available',
+            f"A new version ({version}) is available!\n\nWould you like to update now?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+        
+        if reply == QMessageBox.Yes:
+            download_and_install(download_url, self)
 
     def _create_default_icon(self):
         pixmap = QPixmap(64, 64)
@@ -167,9 +198,40 @@ class MainWindow(QMainWindow):
         if index == 1:
             self.tracked_page.refresh_cards()
 
+    def _show_toast(self, message):
+        """Shows a temporary fading notification in the bottom right."""
+        toast = QLabel(message, self)
+        toast.setObjectName("toastLabel")
+        toast.setAlignment(Qt.AlignCenter)
+        toast.setWordWrap(True)
+        
+        # Size and position
+        toast.adjustSize()
+        toast.setFixedWidth(toast.width() + 40)
+        toast.setFixedHeight(toast.height() + 20)
+        x = self.width() - toast.width() - 30
+        y = self.height() - toast.height() - 30
+        toast.move(x, y)
+        toast.raise_()
+        toast.show()
+        
+        # Fade out animation
+        effect = QGraphicsOpacityEffect(toast)
+        toast.setGraphicsEffect(effect)
+        anim = QPropertyAnimation(effect, b"opacity", toast)
+        anim.setDuration(500)
+        anim.setStartValue(1.0)
+        anim.setEndValue(0.0)
+        anim.setEasingCurve(QEasingCurve.OutCubic)
+        
+        # Wait 2 seconds, then fade out, then delete
+        QTimer.singleShot(2000, anim.start)
+        anim.finished.connect(toast.deleteLater)
+
     def _on_game_added(self, game):
         self.tracked_page.refresh_cards()
         self._update_status(f"Now tracking: {game['name']} ({game.get('edition', 'N/A')})")
+        self._show_toast(f"{game['name']} has been added to Tracked Games!")
         self.checker.check_single(game["appid"], game.get("edition", "Standard Edition"), game["name"])
 
     def _on_price_fetched(self, appid, edition, price_info):

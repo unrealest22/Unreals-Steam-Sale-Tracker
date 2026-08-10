@@ -22,6 +22,15 @@ QLabel#origPriceStrikethrough { color: #8f98a0; font-size: 14px; text-decoration
 QLabel#finalPriceGreen { color: #beee11; font-size: 16px; font-weight: bold; }
 QLabel#priceNormal { color: #c7d5e0; font-size: 16px; font-weight: bold; }
 QLabel#settingLabel { color: #c7d5e0; font-size: 14px; }
+QLabel#toastLabel {
+    background-color: #2a475e;
+    color: #ffffff;
+    border: 1px solid #66c0f4;
+    border-radius: 4px;
+    padding: 12px 24px;
+    font-size: 14px;
+    font-weight: bold;
+}
 QLineEdit { background-color: #316282; color: #ffffff; border: 1px solid #2a475e; border-radius: 3px; padding: 10px 14px; font-size: 14px; selection-background-color: #66c0f4; }
 QLineEdit:focus { border: 1px solid #66c0f4; background-color: #3d6f8f; }
 QLineEdit::placeholder { color: #8fa7b8; }
