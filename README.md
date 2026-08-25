@@ -15,11 +15,10 @@ A desktop application that tracks and notifies you if a specific Steam game that
 ## Additional notes
 ### I hope you guys enjoy my first project! I don't know if I'll have the motivation to make something like this again lol, but I'll be giving this application some updates!
 - This requires Python 3.8+ to run from source
-- The UI was also vibecoded because I don't know how to make UI's on python properly haha
+- The UI was also vibecoded (ONLY IN VERSIONS v0.1 AND v0.2) because I don't know how to make UI's on python properly haha
 - DM theunreall_ on Discord to report some bugs!
 
 ### Preview Images:
-<img width="500" alt="image" src="https://github.com/user-attachments/assets/6db54710-8409-442d-b316-4cb3cafceab0" />
-<img width="600" alt="image" src="https://github.com/user-attachments/assets/ae77f975-2f03-4878-b364-bd3193b4d3dd" />
-<img width="691" alt="image" src="https://github.com/user-attachments/assets/7ae917a4-90f3-4e79-b561-3d1d750cfc64" />
-
+<img width="600" alt="image" src="https://github.com/user-attachments/assets/1d67d53f-1f31-4b92-be67-1137867d3383" />
+<img width="600" alt="image" src="https://github.com/user-attachments/assets/82369728-14ec-4ac8-8746-099f8f0536ea" />
+<img width="691" alt="image" src="https://github.com/user-attachments/assets/02afe594-6d58-483c-aea2-530e05467414" />
