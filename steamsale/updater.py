@@ -35,7 +35,7 @@ class UpdateChecker(QObject):
                 if latest_version > CURRENT_VERSION:
                     download_url = None
                     for asset in data.get("assets", []):
-                        if asset["name"].endswith(".exe"):
+                        if asset["name"].endswith("_Setup.exe"):
                             download_url = asset["browser_download_url"]
                             break
 
@@ -119,39 +119,36 @@ def download_and_install(download_url, parent_window):
         progress.setStandardButtons(QMessageBox.NoButton)
         progress.show()
 
-        if getattr(sys, 'frozen', False):
-            current_exe = sys.executable
-        else:
-            progress.close()
-            QMessageBox.warning(parent_window, "Update", "Auto-update only works on the compiled .exe version.")
-            return
-
         temp_dir = tempfile.gettempdir()
-        temp_exe = os.path.join(temp_dir, "UnrealsSaleTracker_update.exe")
+        installer_exe = os.path.join(temp_dir, "UnrealsSaleTracker_Setup.exe")
 
         req = urllib.request.Request(download_url, headers={"User-Agent": "UnrealsSaleTracker"})
-        with urllib.request.urlopen(req, timeout=60) as response, open(temp_exe, 'wb') as out_file:
+        with urllib.request.urlopen(req, timeout=60) as response, open(installer_exe, 'wb') as out_file:
             shutil.copyfileobj(response, out_file)
 
         progress.close()
 
+        if getattr(sys, 'frozen', False):
+            install_dir = os.path.dirname(sys.executable)
+        else:
+            install_dir = os.getcwd()
+
+        install_exe = os.path.join(install_dir, "UnrealsSaleTracker.exe")
+
         batch_path = os.path.join(temp_dir, "steam_updater.bat")
-        # loop until the old exe is gone — windows holds locks on running processes
-        batch_content = f"""
-@echo off
-:wait_loop
-timeout /t 1 /nobreak >nul
-del "{current_exe}" 2>nul
-if exist "{current_exe}" goto wait_loop
-move /y "{temp_exe}" "{current_exe}"
-start "" "{current_exe}"
+        batch_content = f"""@echo off
+taskkill /f /im UnrealsSaleTracker.exe >nul 2>&1
+timeout /t 2 /nobreak >nul
+del /q "%TEMP%\\_MEI*" >nul 2>&1
+"{installer_exe}" /SILENT /NORESTART /NOCANCEL
+timeout /t 3 /nobreak >nul
+start "" "{install_exe}"
 del "%~f0"
 """
         with open(batch_path, "w") as f:
             f.write(batch_content)
 
         subprocess.Popen(['cmd', '/c', batch_path], creationflags=subprocess.CREATE_NO_WINDOW)
-        # force exit so windows releases the exe lock immediately
         os._exit(0)
 
     except Exception as e:
