@@ -367,46 +367,53 @@ class SearchResultCard(QFrame):
         row.setObjectName("editionCard")
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(12, 6, 12, 6)
-        row_layout.setSpacing(10)
+        row_layout.setSpacing(8)
 
         ed_name = QLabel(edition["name"])
-        ed_name.setStyleSheet("color: #c7d5e0; font-size: 12px; font-weight: 600;")
+        ed_name.setStyleSheet("color: #c7d5e0; font-size: 12px; font-weight: 600; qproperty-elideMode: ElideRight;")
         ed_name.setToolTip(edition["name"])
+        ed_name.setMinimumWidth(60)
         row_layout.addWidget(ed_name, 1)
 
         currency, symbol = get_currency_info(self.cc)
 
+        price_info = QHBoxLayout()
+        price_info.setSpacing(6)
+
         if edition.get("is_free"):
             price_label = QLabel("FREE")
-            price_label.setObjectName("discountLabelSmall")
             price_label.setAlignment(Qt.AlignCenter)
             price_label.setStyleSheet("color: #1a3a1a; background-color: #a4d65e; font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 4px;")
-            row_layout.addWidget(price_label)
+            price_info.addWidget(price_label)
         elif edition["discount_pct"] > 0:
             disc = QLabel(f"-{edition['discount_pct']}%")
-            disc.setObjectName("discountLabelSmall")
             disc.setAlignment(Qt.AlignCenter)
             disc.setStyleSheet("color: #1a3a1a; background-color: #a4d65e; font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 4px;")
-            row_layout.addWidget(disc)
+            price_info.addWidget(disc)
             orig = QLabel(format_price(edition["price_original"], symbol))
             orig.setStyleSheet("color: #5a6a7e; font-size: 12px; text-decoration: line-through;")
-            row_layout.addWidget(orig)
+            price_info.addWidget(orig)
             final = QLabel(format_price(edition["price_final"], symbol))
             final.setStyleSheet("color: #a4d65e; font-size: 14px; font-weight: 700;")
-            row_layout.addWidget(final)
+            price_info.addWidget(final)
         else:
             price = QLabel(format_price(edition["price_final"], symbol))
             price.setStyleSheet("color: #7a8a9e; font-size: 13px;")
-            row_layout.addWidget(price)
+            price_info.addWidget(price)
+
+        price_widget = QWidget()
+        price_widget.setLayout(price_info)
+        price_widget.setFixedWidth(price_widget.sizeHint().width())
+        row_layout.addWidget(price_widget, 0, Qt.AlignVCenter)
 
         track_btn = QPushButton("Track")
         track_btn.setObjectName("trackBtn")
         track_btn.setCursor(QCursor(Qt.PointingHandCursor))
-        track_btn.setFixedWidth(80)
-        track_btn.setFixedHeight(30)
+        track_btn.setFixedWidth(74)
+        track_btn.setFixedHeight(28)
         track_btn.setStyleSheet(
             "QPushButton { background-color: #a4d65e; color: #0f1520; border: 1px solid #a4d65e; "
-            "border-radius: 3px; padding: 6px 16px; font-size: 13px; font-weight: bold; min-width: 70px; }"
+            "border-radius: 3px; padding: 4px 12px; font-size: 12px; font-weight: bold; }"
             "QPushButton:hover { background-color: #b4e66e; border-color: #b4e66e; }"
             "QPushButton:pressed { background-color: #94c64e; border-color: #94c64e; }"
         )
@@ -495,11 +502,11 @@ class PopularSearchCard(QFrame):
         track_btn = QPushButton("Track")
         track_btn.setObjectName("trackBtn")
         track_btn.setCursor(QCursor(Qt.PointingHandCursor))
-        track_btn.setFixedWidth(90)
-        track_btn.setFixedHeight(34)
+        track_btn.setFixedWidth(74)
+        track_btn.setFixedHeight(30)
         track_btn.setStyleSheet(
             "QPushButton { background-color: #a4d65e; color: #0f1520; border: 1px solid #a4d65e; "
-            "border-radius: 3px; padding: 6px 16px; font-size: 13px; font-weight: bold; min-width: 70px; }"
+            "border-radius: 3px; padding: 4px 12px; font-size: 12px; font-weight: bold; }"
             "QPushButton:hover { background-color: #b4e66e; border-color: #b4e66e; }"
             "QPushButton:pressed { background-color: #94c64e; border-color: #94c64e; }"
         )

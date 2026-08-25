@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (
 )
 
 GITHUB_REPO = "unrealest22/Unreals-Steam-Sale-Tracker"
-CURRENT_VERSION = "v0.25"
+CURRENT_VERSION = "v0.26"
 
 class UpdateChecker(QObject):
     update_found = pyqtSignal(str, str, str)
@@ -136,11 +136,13 @@ def download_and_install(download_url, parent_window):
         progress.close()
 
         batch_path = os.path.join(temp_dir, "steam_updater.bat")
-        # this is sketchy but its the only way to replace a running exe on windows
+        # loop until the old exe is gone — windows holds locks on running processes
         batch_content = f"""
 @echo off
-timeout /t 2 /nobreak >nul
-del "{current_exe}"
+:wait_loop
+timeout /t 1 /nobreak >nul
+del "{current_exe}" 2>nul
+if exist "{current_exe}" goto wait_loop
 move /y "{temp_exe}" "{current_exe}"
 start "" "{current_exe}"
 del "%~f0"
@@ -149,7 +151,8 @@ del "%~f0"
             f.write(batch_content)
 
         subprocess.Popen(['cmd', '/c', batch_path], creationflags=subprocess.CREATE_NO_WINDOW)
-        QApplication.quit()
+        # force exit so windows releases the exe lock immediately
+        os._exit(0)
 
     except Exception as e:
         QMessageBox.critical(parent_window, "Update Failed", f"Failed to download update:\n{e}")

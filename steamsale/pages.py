@@ -35,7 +35,7 @@ class SearchPage(QWidget):
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(40, 36, 40, 36)
+        layout.setContentsMargins(24, 30, 24, 30)
         layout.setSpacing(0)
 
         title = QLabel("Track a Game")

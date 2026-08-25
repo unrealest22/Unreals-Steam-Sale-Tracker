@@ -172,7 +172,7 @@ class MainWindow(QMainWindow):
         footer_layout.addWidget(self.status_label)
 
         credits = QLabel(
-            'v0.25 | <a href="https://github.com/unrealest22/Unreals-Steam-Sale-Tracker" '
+            'v0.26 | <a href="https://github.com/unrealest22/Unreals-Steam-Sale-Tracker" '
             'style="color: #06b0d6; text-decoration: none;">GitHub</a>'
         )
         credits.setObjectName("creditsLabel")
