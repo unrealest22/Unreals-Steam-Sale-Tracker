@@ -7,6 +7,7 @@ SOUNDS_DIR = os.path.join(APP_DIR, "sounds")
 os.makedirs(APP_DIR, exist_ok=True)
 os.makedirs(SOUNDS_DIR, exist_ok=True)
 
+# bump this when config format changes so old configs get overwritten instead of crashing
 DEFAULT_CONFIG = {
     "cc": "US",
     "run_in_background": True,

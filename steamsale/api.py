@@ -10,6 +10,7 @@ STEAM_SEARCH_API = "https://store.steampowered.com/api/storesearch"
 STEAM_FEATURED_API = "https://store.steampowered.com/api/featuredcategories"
 STEAM_CDN = "https://cdn.cloudflare.steamstatic.com/steam/apps"
 
+# retry logic because steam api likes to randomly 429 you
 def fetch_json(url, retries=4, delay=2):
     for i in range(retries):
         try:
@@ -47,6 +48,7 @@ def fetch_featured_games(cc="US"):
     if not data:
         return []
     specials = data.get("specials", {})
+    # steam returns this as either a dict or a list depending on mood
     items = specials.get("items", []) if isinstance(specials, dict) else specials if isinstance(specials, list) else []
     results = []
     for item in items[:8]:
@@ -54,20 +56,29 @@ def fetch_featured_games(cc="US"):
         if not appid:
             continue
         name = item.get("name", "Unknown")
-        discount = item.get("discount", 0)
+
+        discount = item.get("discount_percent", item.get("discount", 0))
         if isinstance(discount, str):
             try: discount = int(discount)
             except: discount = 0
+
         final_price = item.get("final_price", 0)
         if isinstance(final_price, str):
             try: final_price = int(final_price)
             except: final_price = 0
         final_price = final_price / 100
-        original_price = item.get("original_price", final_price * 100)
+
+        original_price = item.get("original_price", 0)
         if isinstance(original_price, str):
             try: original_price = int(original_price)
-            except: original_price = int(final_price * 100)
+            except: original_price = 0
         original_price = original_price / 100
+
+        if original_price == 0 and discount > 0 and final_price > 0:
+            original_price = round(final_price / (1 - discount / 100), 2)
+        elif original_price == 0:
+            original_price = final_price
+
         header_image = item.get("header_image", f"{STEAM_CDN}/{appid}/header.jpg")
         results.append({
             "appid": appid, "name": name, "discount": discount,

@@ -5,15 +5,17 @@ import sys
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QComboBox, QCheckBox, QFrame, QScrollArea, QStackedWidget, QFileDialog
+    QComboBox, QCheckBox, QFrame, QScrollArea, QStackedWidget, QFileDialog,
+    QSizePolicy, QSpacerItem
 )
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QPropertyAnimation, QEasingCurve
 from PyQt5.QtGui import QCursor
 
 from .config import CC_MAP, DLC_TYPES, save_config, get_currency_info, format_price
 from .api import search_game_by_name, fetch_featured_games
 from .sounds import BUILTIN_SOUNDS, play_notification_sound
 from .widgets import GameCard, SearchResultCard, PopularSearchCard
+
 
 class SearchPage(QWidget):
     game_added = pyqtSignal(dict)
@@ -23,6 +25,7 @@ class SearchPage(QWidget):
     def __init__(self, config):
         super().__init__()
         self.config = config
+        # If you see this, you're gay
         self.popular_games = []
         self.has_searched = False
         self.popular_loaded.connect(self._on_popular_loaded)
@@ -32,91 +35,134 @@ class SearchPage(QWidget):
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(32, 32, 32, 32)
-        layout.setSpacing(20)
+        layout.setContentsMargins(40, 36, 40, 36)
+        layout.setSpacing(0)
+
         title = QLabel("Track a Game")
         title.setObjectName("titleLabel")
         layout.addWidget(title)
-        subtitle = QLabel("Enter a Steam App ID or game name — editions load automatically per game")
-        subtitle.setObjectName("statusLabel")
+
+        subtitle = QLabel("Search by name or Steam App ID  \u2022  Editions load automatically")
+        subtitle.setObjectName("subtitleLabel")
         layout.addWidget(subtitle)
+
+        layout.addSpacing(28)
+
         search_row = QHBoxLayout()
         search_row.setSpacing(12)
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("[GAME ID] or Name of the Game")
+        self.search_input.setPlaceholderText("Search games... (e.g. Minecraft or something, Elden Ring)")
+        self.search_input.setMinimumHeight(48)
         self.search_input.returnPressed.connect(self._do_search)
         self.search_input.textChanged.connect(self._on_text_changed)
         search_row.addWidget(self.search_input)
         search_btn = QPushButton("Search")
         search_btn.setObjectName("primaryBtn")
         search_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        search_btn.setFixedHeight(48)
+        search_btn.setFixedWidth(110)
+        search_btn.setStyleSheet(
+            "QPushButton { background-color: #a4d65e; color: #0f1520; border: 1px solid #a4d65e; "
+            "border-radius: 3px; padding: 10px 28px; font-size: 14px; font-weight: bold; }"
+            "QPushButton:hover { background-color: #b4e66e; border-color: #b4e66e; }"
+            "QPushButton:pressed { background-color: #94c64e; border-color: #94c64e; }"
+        )
         search_btn.clicked.connect(self._do_search)
         search_row.addWidget(search_btn)
         layout.addLayout(search_row)
+
+        layout.addSpacing(24)
+
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll.setFrameShape(QFrame.NoFrame)
+
         self.results_widget = QWidget()
         self.results_layout = QVBoxLayout(self.results_widget)
         self.results_layout.setSpacing(16)
         self.results_layout.setContentsMargins(0, 0, 0, 0)
+
         self.search_section_widget = QWidget()
         self.search_section_layout = QVBoxLayout(self.search_section_widget)
         self.search_section_layout.setSpacing(12)
         self.search_section_layout.setContentsMargins(0, 0, 0, 0)
-        self.games_label = QLabel("Games")
+
+        self.games_label = QLabel("GAMES")
         self.games_label.setObjectName("sectionLabel")
         self.search_section_layout.addWidget(self.games_label)
+
         self.games_container = QVBoxLayout()
-        self.games_container.setSpacing(10)
+        self.games_container.setSpacing(12)
         self.search_section_layout.addLayout(self.games_container)
+
         self.dlc_section_widget = QWidget()
         self.dlc_section_layout = QVBoxLayout(self.dlc_section_widget)
         self.dlc_section_layout.setSpacing(10)
         self.dlc_section_layout.setContentsMargins(0, 0, 0, 0)
-        self.dlc_separator = QFrame()
-        self.dlc_separator.setObjectName("separator")
-        self.dlc_section_layout.addWidget(self.dlc_separator)
-        self.dlc_label = QLabel("Downloadable Content")
+
+        dlc_sep = QFrame()
+        dlc_sep.setObjectName("separator")
+        dlc_sep.setFixedHeight(1)
+        self.dlc_section_layout.addWidget(dlc_sep)
+
+        self.dlc_label = QLabel("DOWNLOADABLE CONTENT")
         self.dlc_label.setObjectName("sectionLabel")
         self.dlc_section_layout.addWidget(self.dlc_label)
+
         self.dlc_container = QVBoxLayout()
         self.dlc_container.setSpacing(10)
         self.dlc_section_layout.addLayout(self.dlc_container)
         self.dlc_section_widget.setVisible(False)
+
         self.search_section_layout.addWidget(self.dlc_section_widget)
         self.search_section_widget.setVisible(False)
         self.results_layout.addWidget(self.search_section_widget)
+
         self.popular_section_widget = QWidget()
         self.popular_section_layout = QVBoxLayout(self.popular_section_widget)
-        self.popular_section_layout.setSpacing(10)
+        self.popular_section_layout.setSpacing(12)
         self.popular_section_layout.setContentsMargins(0, 0, 0, 0)
+
         popular_header = QHBoxLayout()
         popular_header.setSpacing(12)
-        self.popular_label = QLabel("Popular Searches")
+        self.popular_label = QLabel("FEATURED & ON SALE")
         self.popular_label.setObjectName("sectionLabel")
         popular_header.addWidget(self.popular_label)
         popular_header.addStretch()
+
         self.refresh_popular_btn = QPushButton("Refresh")
         self.refresh_popular_btn.setObjectName("trackBtn")
         self.refresh_popular_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self.refresh_popular_btn.setFixedWidth(90)
+        self.refresh_popular_btn.setFixedHeight(32)
+        self.refresh_popular_btn.setStyleSheet(
+            "QPushButton { background-color: #a4d65e; color: #0f1520; border: 1px solid #a4d65e; "
+            "border-radius: 3px; padding: 6px 16px; font-size: 13px; font-weight: bold; min-width: 70px; }"
+            "QPushButton:hover { background-color: #b4e66e; border-color: #b4e66e; }"
+            "QPushButton:pressed { background-color: #94c64e; border-color: #94c64e; }"
+        )
         self.refresh_popular_btn.clicked.connect(self._load_popular)
         popular_header.addWidget(self.refresh_popular_btn)
         self.popular_section_layout.addLayout(popular_header)
+
         self.popular_loading_label = QLabel("Loading popular games...")
         self.popular_loading_label.setObjectName("loadingLabel")
         self.popular_section_layout.addWidget(self.popular_loading_label)
+
         self._popular_dot_count = 0
         self._popular_spinner = QTimer(self)
         self._popular_spinner.timeout.connect(self._update_popular_loading)
         self._popular_spinner.start(500)
+
         self.popular_container = QVBoxLayout()
         self.popular_container.setSpacing(10)
         self.popular_section_layout.addLayout(self.popular_container)
+
         self.popular_section_widget.setVisible(True)
         self.results_layout.addWidget(self.popular_section_widget)
         self.results_layout.addStretch()
+
         self.scroll.setWidget(self.results_widget)
         layout.addWidget(self.scroll)
 
@@ -139,6 +185,7 @@ class SearchPage(QWidget):
         self.popular_loading_label.setVisible(True)
         self.popular_loading_label.setText("Loading popular games...")
         self._popular_spinner.start(500)
+
         def _fetch():
             cc = self.config.get("cc", "US")
             games = fetch_featured_games(cc)
@@ -146,6 +193,7 @@ class SearchPage(QWidget):
                 self.popular_loaded.emit(games)
             else:
                 self.popular_failed.emit()
+
         t = threading.Thread(target=_fetch, daemon=True)
         t.start()
 
@@ -192,6 +240,7 @@ class SearchPage(QWidget):
         self.has_searched = True
         self.search_section_widget.setVisible(True)
         self.popular_section_widget.setVisible(False)
+
         cc = self.config.get("cc", "US")
         if query.isdigit():
             self._add_search_result_card(query, f"App ID: {query}", 0)
@@ -237,6 +286,7 @@ class SearchPage(QWidget):
     def reload_popular(self):
         self._load_popular()
 
+
 class TrackedPage(QWidget):
     refresh_requested = pyqtSignal()
     game_removed = pyqtSignal(str, str)
@@ -250,29 +300,51 @@ class TrackedPage(QWidget):
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(32, 32, 32, 32)
-        layout.setSpacing(20)
+        layout.setContentsMargins(40, 36, 40, 36)
+        layout.setSpacing(0)
+
         header = QHBoxLayout()
+        header.setSpacing(16)
+        header.setContentsMargins(0, 0, 0, 0)
+
+        title_col = QVBoxLayout()
+        title_col.setSpacing(4)
         title = QLabel("Tracked Games")
         title.setObjectName("titleLabel")
-        header.addWidget(title)
+        title_col.addWidget(title)
+        self.count_label = QLabel("0 games tracked")
+        self.count_label.setObjectName("subtitleLabel")
+        title_col.addWidget(self.count_label)
+        header.addLayout(title_col)
+
         header.addStretch()
-        refresh_btn = QPushButton("Refresh Prices")
+
+        refresh_btn = QPushButton("  Refresh Prices")
         refresh_btn.setObjectName("primaryBtn")
         refresh_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        refresh_btn.setFixedHeight(44)
+        refresh_btn.setStyleSheet(
+            "QPushButton { background-color: #a4d65e; color: #0f1520; border: 1px solid #a4d65e; "
+            "border-radius: 3px; padding: 10px 28px; font-size: 14px; font-weight: bold; }"
+            "QPushButton:hover { background-color: #b4e66e; border-color: #b4e66e; }"
+            "QPushButton:pressed { background-color: #94c64e; border-color: #94c64e; }"
+        )
         refresh_btn.clicked.connect(self.refresh_requested.emit)
         header.addWidget(refresh_btn)
+
         layout.addLayout(header)
-        self.count_label = QLabel("0 games tracked")
-        self.count_label.setObjectName("statusLabel")
-        layout.addWidget(self.count_label)
+        layout.addSpacing(28)
+
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
         self.cards_widget = QWidget()
         self.cards_layout = QVBoxLayout(self.cards_widget)
-        self.cards_layout.setSpacing(10)
+        self.cards_layout.setSpacing(12)
+        self.cards_layout.setContentsMargins(0, 0, 0, 0)
         self.cards_layout.addStretch()
+
         self.scroll.setWidget(self.cards_widget)
         layout.addWidget(self.scroll)
 
@@ -282,10 +354,13 @@ class TrackedPage(QWidget):
             item = self.cards_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
+
         games = self.config.get("tracked_games", [])
-        self.count_label.setText(f"{len(games)} game(s) tracked")
+        self.count_label.setText(f"{len(games)} game{'s' if len(games) != 1 else ''} tracked")
+
         cc = self.config.get("cc", "US")
         last_prices = self.config.get("last_prices", {})
+
         for game in games:
             appid = game["appid"]
             name = game["name"]
@@ -296,10 +371,12 @@ class TrackedPage(QWidget):
             card.remove_clicked.connect(self._remove_game)
             self.cards_layout.insertWidget(self.cards_layout.count() - 1, card)
             self._card_map[(appid, edition)] = card
+
         if not games:
-            empty = QLabel("No games tracked yet.\nGo to the Search tab to add games.")
+            empty = QLabel("No games tracked yet.\nGo to Search to add some games.")
             empty.setObjectName("statusLabel")
             empty.setAlignment(Qt.AlignCenter)
+            empty.setStyleSheet("color: #3e4e62; font-size: 14px; padding: 60px 0;")
             self.cards_layout.insertWidget(0, empty)
 
     def update_card_price(self, appid, edition, price_info):
@@ -320,6 +397,7 @@ class TrackedPage(QWidget):
         self.game_removed.emit(appid, edition)
         self.refresh_cards()
 
+
 class SettingsPage(QWidget):
     settings_changed = pyqtSignal()
 
@@ -336,74 +414,93 @@ class SettingsPage(QWidget):
 
         content = QWidget()
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(40, 40, 40, 40)
-        layout.setSpacing(40)
+        layout.setContentsMargins(40, 36, 40, 36)
+        layout.setSpacing(32)
 
         title = QLabel("Settings")
         title.setObjectName("titleLabel")
         layout.addWidget(title)
 
-        region_section = QLabel("REGION")
-        region_section.setObjectName("sectionLabel")
-        layout.addWidget(region_section)
+        subtitle = QLabel("Configure your tracker preferences")
+        subtitle.setObjectName("subtitleLabel")
+        layout.addWidget(subtitle)
 
+        layout.addSpacing(12)
+
+        region_card = self._make_card("Region", "Your country determines the currency for all game prices.")
         region_row = QHBoxLayout()
-        region_row.setSpacing(20)
-        region_label = QLabel("Your Country / Region:")
+        region_row.setSpacing(16)
+        region_label = QLabel("Country / Region")
         region_label.setObjectName("settingLabel")
-        region_label.setMinimumWidth(200)
+        region_label.setMinimumWidth(180)
         region_row.addWidget(region_label)
 
         self.country_combo = QComboBox()
-        self.country_combo.setMinimumHeight(36)
+        self.country_combo.setMinimumHeight(40)
+        self.country_combo.setStyleSheet(
+            "QComboBox { background-color: #1a2236; color: #ffffff; border: 2px solid #1e2e44; "
+            "border-radius: 10px; padding: 10px 16px; min-width: 180px; font-size: 13px; }"
+            "QComboBox:hover { border-color: rgba(102, 192, 244, 0.4); }"
+            "QComboBox:focus { border-color: #66c0f4; }"
+            "QComboBox::drop-down { border: none; width: 30px; }"
+            "QComboBox::down-arrow { image: none; border-left: 5px solid transparent; "
+            "border-right: 5px solid transparent; border-top: 6px solid #66c0f4; margin-right: 10px; }"
+            "QComboBox QAbstractItemView { background-color: #1e2e44; color: #c7d5e0; "
+            "border: 1px solid #2a3e58; selection-background-color: #2a475e; selection-color: #ffffff; "
+            "outline: none; padding: 6px; }"
+        )
         for cc in sorted(CC_MAP.keys()):
             currency, symbol = CC_MAP[cc]
-            self.country_combo.addItem(f"{cc} — {currency} ({symbol})", cc)
+            self.country_combo.addItem(f"{cc}  \u2014  {currency} ({symbol})", cc)
         idx = self.country_combo.findData(self.config.get("cc", "US"))
         if idx >= 0:
             self.country_combo.setCurrentIndex(idx)
         self.country_combo.currentIndexChanged.connect(self._save_region)
         region_row.addWidget(self.country_combo, 1)
-        layout.addLayout(region_row)
+        region_card.layout().addLayout(region_row)
+        layout.addWidget(region_card)
 
-        sep1 = QFrame()
-        sep1.setObjectName("separator")
-        layout.addWidget(sep1)
+        app_card = self._make_card("Application", "Background behavior and startup options.")
 
-        bg_section = QLabel("APPLICATION")
-        bg_section.setObjectName("sectionLabel")
-        layout.addWidget(bg_section)
-
-        self.bg_checkbox = QCheckBox("Run in Background (minimize to system tray)")
+        self.bg_checkbox = QCheckBox("Run in Background (minimize to system tray when closed)")
         self.bg_checkbox.setChecked(self.config.get("run_in_background", True))
-        self.bg_checkbox.setMinimumHeight(30)
+        self.bg_checkbox.setMinimumHeight(32)
         self.bg_checkbox.stateChanged.connect(self._save_background)
-        layout.addWidget(self.bg_checkbox)
+        app_card.layout().addWidget(self.bg_checkbox)
 
-        self.startup_checkbox = QCheckBox("Run on Startup (system tray only)")
+        self.startup_checkbox = QCheckBox("Run on Startup (launch silently in tray on boot)")
         self.startup_checkbox.setChecked(self.config.get("run_on_startup", False))
-        self.startup_checkbox.setMinimumHeight(30)
+        self.startup_checkbox.setMinimumHeight(32)
         self.startup_checkbox.stateChanged.connect(self._save_startup)
-        layout.addWidget(self.startup_checkbox)
+        app_card.layout().addWidget(self.startup_checkbox)
+        layout.addWidget(app_card)
 
-        sep2 = QFrame()
-        sep2.setObjectName("separator")
-        layout.addWidget(sep2)
-
-        interval_section = QLabel("CHECK INTERVAL")
-        interval_section.setObjectName("sectionLabel")
-        layout.addWidget(interval_section)
-
+        interval_card = self._make_card("Check Interval", "How often to check for price changes on tracked games.")
         interval_row = QHBoxLayout()
-        interval_row.setSpacing(20)
-        interval_label = QLabel("Check for sales every:")
+        interval_row.setSpacing(16)
+        interval_label = QLabel("Check every")
         interval_label.setObjectName("settingLabel")
-        interval_label.setMinimumWidth(200)
+        interval_label.setMinimumWidth(180)
         interval_row.addWidget(interval_label)
 
         self.interval_combo = QComboBox()
-        self.interval_combo.setMinimumHeight(36)
-        intervals = [("1 minute", 60), ("5 minutes", 300), ("15 minutes", 900), ("30 minutes", 1800), ("1 hour", 3600)]
+        self.interval_combo.setMinimumHeight(40)
+        self.interval_combo.setStyleSheet(
+            "QComboBox { background-color: #1a2236; color: #ffffff; border: 2px solid #1e2e44; "
+            "border-radius: 10px; padding: 10px 16px; min-width: 180px; font-size: 13px; }"
+            "QComboBox:hover { border-color: rgba(102, 192, 244, 0.4); }"
+            "QComboBox:focus { border-color: #66c0f4; }"
+            "QComboBox::drop-down { border: none; width: 30px; }"
+            "QComboBox::down-arrow { image: none; border-left: 5px solid transparent; "
+            "border-right: 5px solid transparent; border-top: 6px solid #66c0f4; margin-right: 10px; }"
+            "QComboBox QAbstractItemView { background-color: #1e2e44; color: #c7d5e0; "
+            "border: 1px solid #2a3e58; selection-background-color: #2a475e; selection-color: #ffffff; "
+            "outline: none; padding: 6px; }"
+        )
+        intervals = [
+            ("1 minute", 60), ("5 minutes", 300), ("15 minutes", 900),
+            ("30 minutes", 1800), ("1 hour", 3600)
+        ]
         for label, val in intervals:
             self.interval_combo.addItem(label, val)
         idx = self.interval_combo.findData(self.config.get("check_interval", 300))
@@ -411,44 +508,60 @@ class SettingsPage(QWidget):
             self.interval_combo.setCurrentIndex(idx)
         self.interval_combo.currentIndexChanged.connect(self._save_interval)
         interval_row.addWidget(self.interval_combo, 1)
-        layout.addLayout(interval_row)
+        interval_card.layout().addLayout(interval_row)
+        layout.addWidget(interval_card)
 
-        sep3 = QFrame()
-        sep3.setObjectName("separator")
-        layout.addWidget(sep3)
-
-        sound_section = QLabel("NOTIFICATION SOUND")
-        sound_section.setObjectName("sectionLabel")
-        layout.addWidget(sound_section)
-
+        sound_card = self._make_card("Notification Sound", "Sound played when a tracked game goes on sale.")
         sound_row = QHBoxLayout()
-        sound_row.setSpacing(20)
-        sound_label = QLabel("Alert Sound:")
-        sound_label.setObjectName("settingLabel")
-        sound_label.setMinimumWidth(200)
-        sound_row.addWidget(sound_label)
+        sound_row.setSpacing(12)
 
         self.sound_combo = QComboBox()
-        self.sound_combo.setMinimumHeight(36)
+        self.sound_combo.setMinimumHeight(40)
+        self.sound_combo.setStyleSheet(
+            "QComboBox { background-color: #1a2236; color: #ffffff; border: 2px solid #1e2e44; "
+            "border-radius: 10px; padding: 10px 16px; min-width: 180px; font-size: 13px; }"
+            "QComboBox:hover { border-color: rgba(102, 192, 244, 0.4); }"
+            "QComboBox:focus { border-color: #66c0f4; }"
+            "QComboBox::drop-down { border: none; width: 30px; }"
+            "QComboBox::down-arrow { image: none; border-left: 5px solid transparent; "
+            "border-right: 5px solid transparent; border-top: 6px solid #66c0f4; margin-right: 10px; }"
+            "QComboBox QAbstractItemView { background-color: #1e2e44; color: #c7d5e0; "
+            "border: 1px solid #2a3e58; selection-background-color: #2a475e; selection-color: #ffffff; "
+            "outline: none; padding: 6px; }"
+        )
         self._populate_sound_combo()
         sound_row.addWidget(self.sound_combo, 1)
 
-        browse_btn = QPushButton("Browse...")
-        browse_btn.setObjectName("trackBtn")
+        browse_btn = QPushButton("Browse")
+        browse_btn.setObjectName("browseBtn")
         browse_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        browse_btn.setFixedHeight(40)
+        browse_btn.setStyleSheet(
+            "QPushButton { background-color: #a4d65e; color: #0f1520; border: 1px solid #a4d65e; "
+            "border-radius: 6px; padding: 8px 22px; font-size: 12px; font-weight: 700; min-width: 80px; }"
+            "QPushButton:hover { background-color: #b4e66e; border-color: #b4e66e; }"
+            "QPushButton:pressed { background-color: #94c64e; border-color: #94c64e; }"
+        )
         browse_btn.clicked.connect(self._browse_sound)
         sound_row.addWidget(browse_btn)
 
         test_btn = QPushButton("Test")
-        test_btn.setObjectName("trackBtn")
+        test_btn.setObjectName("testBtn")
         test_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        test_btn.setFixedHeight(40)
+        test_btn.setStyleSheet(
+            "QPushButton { background-color: #a4d65e; color: #0f1520; border: 1px solid #a4d65e; "
+            "border-radius: 6px; padding: 8px 22px; font-size: 12px; font-weight: 700; min-width: 80px; }"
+            "QPushButton:hover { background-color: #b4e66e; border-color: #b4e66e; }"
+            "QPushButton:pressed { background-color: #94c64e; border-color: #94c64e; }"
+        )
         test_btn.clicked.connect(self._test_sound)
         sound_row.addWidget(test_btn)
-        layout.addLayout(sound_row)
+
+        sound_card.layout().addLayout(sound_row)
 
         self.custom_sound_label = QLabel("")
         self.custom_sound_label.setObjectName("statusLabel")
-        self.custom_sound_label.setContentsMargins(220, 10, 0, 0)
         current_sound = self.config.get("notification_sound", "builtin:coin")
         if current_sound.startswith("builtin:"):
             name = current_sound[8:]
@@ -457,25 +570,34 @@ class SettingsPage(QWidget):
             self.custom_sound_label.setText("Current: None (Silent)")
         else:
             self.custom_sound_label.setText(f"Current: {os.path.basename(current_sound)}")
-        layout.addWidget(self.custom_sound_label)
+        sound_card.layout().addWidget(self.custom_sound_label)
 
+        layout.addWidget(sound_card)
         layout.addStretch()
-
-        info = QLabel(
-            "Settings are saved automatically.\n"
-            "Background mode keeps the app running in the system tray when closed.\n"
-            "Startup launches the app silently in the tray on system boot.\n"
-            "Region determines the currency shown for all game prices.\n"
-            "Notification sound plays when a tracked game goes on sale."
-        )
-        info.setObjectName("statusLabel")
-        layout.addWidget(info)
 
         self.scroll.setWidget(content)
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(self.scroll)
+
+    def _make_card(self, title, description):
+        card = QFrame()
+        card.setObjectName("settingsCard")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(24, 20, 24, 24)
+        card_layout.setSpacing(16)
+
+        header = QLabel(title)
+        header.setStyleSheet("color: #ffffff; font-size: 15px; font-weight: 700;")
+        card_layout.addWidget(header)
+
+        desc = QLabel(description)
+        desc.setObjectName("subtitleLabel")
+        desc.setWordWrap(True)
+        card_layout.addWidget(desc)
+
+        return card
 
     def _populate_sound_combo(self):
         self.sound_combo.blockSignals(True)
@@ -543,10 +665,11 @@ class SettingsPage(QWidget):
         self.settings_changed.emit()
 
     def _toggle_startup(self, enable):
+        # this whole function is different per OS, its kinda ugly but it works
         if sys.platform == "win32":
             import winreg
             key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
-            app_name = "SteamSaleTracker"
+            app_name = "UnrealsSaleTracker"
             try:
                 key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
                 if enable:
@@ -604,3 +727,22 @@ Hidden=false
             else:
                 if os.path.exists(desktop_path):
                     os.remove(desktop_path)
+
+
+class LinkSteamPage(QWidget):
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignCenter)
+        layout.setContentsMargins(40, 36, 40, 36)
+
+        title = QLabel("Coming soon!")
+        title.setObjectName("titleLabel")
+        title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title)
+
+        subtitle = QLabel("Steam account linking will be available soon, I think.\nYou'll be able to keep track of your WISHLIST!!")
+        subtitle.setObjectName("subtitleLabel")
+        subtitle.setAlignment(Qt.AlignCenter)
+        subtitle.setWordWrap(True)
+        layout.addWidget(subtitle)

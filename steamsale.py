@@ -22,14 +22,12 @@ from PyQt5.QtCore import (
 )
 from PyQt5.QtGui import QIcon, QColor, QFont, QPixmap, QPalette, QCursor, QPainter
 
-# ─── Paths ───────────────────────────────────────────────
 APP_DIR = os.path.join(os.path.expanduser("~"), ".steam_sale_tracker")
 CONFIG_PATH = os.path.join(APP_DIR, "config.json")
 SOUNDS_DIR = os.path.join(APP_DIR, "sounds")
 os.makedirs(APP_DIR, exist_ok=True)
 os.makedirs(SOUNDS_DIR, exist_ok=True)
 
-# ─── Config ──────────────────────────────────────────────
 DEFAULT_CONFIG = {
     "cc": "US",
     "run_in_background": True,
@@ -53,7 +51,6 @@ def save_config(cfg):
     with open(CONFIG_PATH, "w") as f:
         json.dump(cfg, f, indent=2)
 
-# ─── Sound System ───────────────────────────────────────
 BUILTIN_SOUNDS = {
     "none": "None (Silent)",
     "coin": "Coin",
@@ -118,7 +115,6 @@ def play_notification_sound(config):
 
 generate_builtin_sounds()
 
-# ─── Steam API Helpers ──────────────────────────────────
 STEAM_STORE_API = "https://store.steampowered.com/api/appdetails"
 STEAM_SEARCH_API = "https://store.steampowered.com/api/storesearch"
 STEAM_FEATURED_API = "https://store.steampowered.com/api/featuredcategories"
@@ -396,7 +392,6 @@ def fetch_price_for_game(appid, edition_name, cc):
 
     return None
 
-# ─── Stylesheet ──────────────────────────────────────────
 STEAM_STYLESHEET = """
 QWidget { background-color: #1b2838; color: #c7d5e0; font-family: "Segoe UI", "Arial", sans-serif; font-size: 14px; }
 QMainWindow, QWidget#mainWidget { background-color: #1b2838; }
@@ -774,7 +769,6 @@ class SearchResultCard(QFrame):
         else:
             for ed in editions:
                 self._add_edition_row(ed)
-        # Force layout recalculation so card expands immediately
         self.adjustSize()
         self.updateGeometry()
         if self.parent():

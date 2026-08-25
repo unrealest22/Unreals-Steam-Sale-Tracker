@@ -13,27 +13,23 @@ def main():
     app.setQuitOnLastWindowClosed(False)
     app.setStyleSheet(STEAM_STYLESHEET)
 
-    # ── Single Instance Lock ──
-    server_name = "UnrealsSteamSaleTracker"
+    server_name = "UnrealsSaleTracker"
+    # this whole block is so two instances of the app dont run at the same time
     socket = QLocalSocket()
     socket.connectToServer(server_name)
     
     if socket.waitForConnected(100):
-        # Another instance is already running. Tell it to show itself.
         socket.write(b"show")
         socket.waitForBytesWritten(100)
         sys.exit(0)
         
-    # No other instance running. Start the local server to listen for future attempts.
-    QLocalServer.removeServer(server_name) # Clean up if it crashed previously
+    QLocalServer.removeServer(server_name)
     server = QLocalServer()
     server.listen(server_name)
     
     config = load_config()
     window = MainWindow(config, start_in_tray=start_in_tray)
     
-    # When a second instance tries to open, it sends a "show" message. 
-    # We catch it here and bring the window to the front.
     def _on_new_connection():
         server.nextPendingConnection()
         window._show_from_tray()

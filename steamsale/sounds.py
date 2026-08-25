@@ -7,28 +7,25 @@ import ctypes
 
 from .config import SOUNDS_DIR
 
-## ─── Get base path (handles both source and frozen exe) ──
 if getattr(sys, 'frozen', False):
-    # PyInstaller extracts to _MEIPASS. We look in the 'steamsale' subfolder.
     BASE_PATH = os.path.join(sys._MEIPASS, "steamsale")
 else:
     BASE_PATH = os.path.dirname(os.path.abspath(__file__))
 
-# ─── Built-in Sounds Config ──
 BUILTIN_SOUNDS = {
+    # Put ur funny note here
     "none": "None (Silent)",
     "coin": "Coin",
     "alert": "Alert",
     "chime": "Chime",
     "powerup": "Power Up",
-    # Custom Built-In sounds, the unreal special:
     "fartsound": "Fart",
     "ButterflyDing": "Ding",
     "barkfart": "Bark & Fart"
 }
-
-# ─── Generate the default WAV files on first run ──
+     # I found out you can generate sounds with like frequencies n shit, so sick
 def generate_builtin_sounds():
+    # these are just sine waves, nothing fancy. they sound okay i guess
     sounds = {
         "coin": [(988, 80), (1319, 200)],
         "alert": [(784, 100), (523, 100), (392, 250)],
@@ -60,7 +57,6 @@ def generate_builtin_sounds():
         except Exception:
             pass
 
-# ─── Audio Player ──
 def play_notification_sound(config):
     sound = config.get("notification_sound", "builtin:coin")
     if sound == "none" or not sound:
@@ -69,15 +65,12 @@ def play_notification_sound(config):
     path = None
     if sound.startswith("builtin:"):
         name = sound[8:]
-        # Check if it's a generated WAV first
         wav_path = os.path.join(SOUNDS_DIR, f"{name}.wav")
         if os.path.exists(wav_path):
             path = wav_path
         else:
-            # Otherwise, look for the bundled MP3
             path = os.path.join(BASE_PATH, f"{name}.mp3")
     else:
-        # Custom user file
         path = sound
 
     if not path or not os.path.exists(path):
@@ -87,13 +80,11 @@ def play_notification_sound(config):
     try:
         if sys.platform == "win32":
             if path.lower().endswith('.mp3'):
-                # Use Windows MCI to play MP3 without opening any windows
                 winmm = ctypes.windll.winmm
                 winmm.mciSendStringW(u"close all", None, 0, None)
                 winmm.mciSendStringW(f'open "{path}" type mpegvideo alias mp3', None, 0, None)
                 winmm.mciSendStringW(u"play mp3", None, 0, None)
             else:
-                # It's a WAV, use winsound directly
                 import winsound
                 winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC)
         elif sys.platform == "darwin":
@@ -103,5 +94,4 @@ def play_notification_sound(config):
     except Exception as e:
         print(f"[ERROR] sound playback: {e}")
 
-# Generate sounds on import
 generate_builtin_sounds()

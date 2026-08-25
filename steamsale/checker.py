@@ -8,6 +8,7 @@ from .config import save_config, format_price
 from .api import fetch_price_for_game
 
 class PriceChecker(QObject):
+    # angry robot stalks your wishlist until something goes on sale, then screams about it
     sale_detected = pyqtSignal(str, str, str, int, float, str)
     check_done = pyqtSignal()
     status_update = pyqtSignal(str)
@@ -32,6 +33,7 @@ class PriceChecker(QObject):
                 self._check_all()
             except Exception as e:
                 print(f"[ERROR] checker loop: {e}")
+            # TODO: maybe add jitter so we don't hammer steam at exact intervals
             time.sleep(self.config.get("check_interval", 300))
 
     def _check_all(self):
