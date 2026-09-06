@@ -25,7 +25,7 @@ class MainWindow(QMainWindow):
         if sys.platform == "win32":
             import ctypes
             # without this the taskbar icon is just a generic python icon
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("steam.sale.tracker")
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Unreals Sale Tracker")
 
         self.config = config
         self.start_in_tray = start_in_tray
@@ -171,15 +171,28 @@ class MainWindow(QMainWindow):
         self.status_label.setObjectName("statusLabel")
         footer_layout.addWidget(self.status_label)
 
+        footer_row = QHBoxLayout()
+        footer_row.setContentsMargins(0, 0, 0, 0)
+        footer_row.setSpacing(6)
+
         credits = QLabel(
-            'v0.26 | <a href="https://github.com/unrealest22/Unreals-Steam-Sale-Tracker" '
+            'v0.27 | <a href="https://github.com/unrealest22/Unreals-Steam-Sale-Tracker" '
             'style="color: #06b0d6; text-decoration: none;">GitHub</a>'
         )
         credits.setObjectName("creditsLabel")
         credits.setOpenExternalLinks(True)
         credits.setTextFormat(Qt.RichText)
         credits.setCursor(QCursor(Qt.PointingHandCursor))
-        footer_layout.addWidget(credits)
+        footer_row.addWidget(credits)
+
+        donate_btn = QPushButton("Donate")
+        donate_btn.setObjectName("donateBtn")
+        donate_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        donate_btn.setFixedHeight(24)
+        donate_btn.clicked.connect(self._on_donate)
+        footer_row.addWidget(donate_btn)
+
+        footer_layout.addLayout(footer_row)
 
         sidebar_layout.addWidget(footer)
 
@@ -249,6 +262,111 @@ class MainWindow(QMainWindow):
     def _on_update_found(self, version, download_url, release_body):
         self._update_status(f"Update {version} available!")
         show_update_dialog(version, download_url, release_body, self)
+
+    def _on_donate(self):
+        import os, sys, ctypes
+        from PyQt5.QtWidgets import QGraphicsOpacityEffect
+
+        # plays that one spongebob sound when u click the "Donate" button lols
+        if sys.platform == "win32":
+            boowomp = os.path.join(os.path.dirname(os.path.abspath(__file__)), "boowomp.mp3")
+            if os.path.exists(boowomp):
+                try:
+                    winmm = ctypes.windll.winmm
+                    winmm.mciSendStringW(u"close boowomp", None, 0, None)
+                    winmm.mciSendStringW(f'open "{boowomp}" type mpegvideo alias boowomp', None, 0, None)
+                    winmm.mciSendStringW(u"play boowomp", None, 0, None)
+                except Exception:
+                    pass
+
+        # dark overlay behind the card
+        overlay = QWidget(self.centralWidget())
+        overlay.setStyleSheet("background-color: rgba(0, 0, 0, 160);")
+        overlay.setGeometry(self.centralWidget().rect())
+        overlay.show()
+
+        overlay_opacity = QGraphicsOpacityEffect(overlay)
+        overlay_opacity.setOpacity(0.0)
+        overlay.setGraphicsEffect(overlay_opacity)
+
+        fade_in_overlay = QPropertyAnimation(overlay_opacity, b"opacity")
+        fade_in_overlay.setDuration(200)
+        fade_in_overlay.setStartValue(0.0)
+        fade_in_overlay.setEndValue(1.0)
+        fade_in_overlay.setEasingCurve(QEasingCurve.OutCubic)
+        fade_in_overlay.start()
+        overlay._fade_anim = fade_in_overlay
+
+        # the card
+        card = QWidget(overlay)
+        card.setFixedSize(320, 180)
+        card.setStyleSheet(
+            "#donateCard { background-color: #1b2838; border: 2px solid #2a475e; border-radius: 14px; }"
+        )
+        card.setObjectName("donateCard")
+
+        card_layout = QVBoxLayout(card)
+        card_layout.setSpacing(8)
+        card_layout.setContentsMargins(28, 24, 28, 20)
+
+        title = QLabel("Donations soon!")
+        title.setStyleSheet("color: #ffffff; font-size: 17px; font-weight: bold; background: transparent; border: none;")
+        title.setAlignment(Qt.AlignCenter)
+        card_layout.addWidget(title)
+
+        body = QLabel("I have to set this up first lol, feel free to donate\nif you want once its available!")
+        body.setStyleSheet("color: #8f98a0; font-size: 12px; background: transparent; border: none;")
+        body.setAlignment(Qt.AlignCenter)
+        body.setWordWrap(True)
+        card_layout.addWidget(body)
+
+        card_layout.addStretch()
+
+        ok_btn = QPushButton("Ok!")
+        ok_btn.setFixedSize(100, 30)
+        ok_btn.setStyleSheet(
+            "QPushButton { background-color: #66c0f4; color: #1b2838; border: none; "
+            "border-radius: 6px; font-size: 12px; font-weight: bold; }"
+            "QPushButton:hover { background-color: #8ad4ff; }"
+        )
+        ok_btn.clicked.connect(lambda: self._dismiss_donate(overlay))
+        card_layout.addWidget(ok_btn, alignment=Qt.AlignCenter)
+
+        # clicking the dark backdrop also closes it
+        overlay.mousePressEvent = lambda e: self._dismiss_donate(overlay)
+        card.mousePressEvent = lambda e: None
+
+        # center the card — just slide up, no opacity effect on card
+        card.setParent(overlay)
+        target_x = (overlay.width() - card.width()) // 2
+        target_y = (overlay.height() - card.height()) // 2
+        card.move(target_x, target_y + 15)
+        card.show()
+
+        card_slide = QPropertyAnimation(card, b"pos")
+        card_slide.setDuration(250)
+        card_slide.setStartValue(QPoint(target_x, target_y + 15))
+        card_slide.setEndValue(QPoint(target_x, target_y))
+        card_slide.setEasingCurve(QEasingCurve.OutCubic)
+        card_slide.start()
+        card._slide_anim = card_slide
+
+        self._donate_overlay = overlay
+
+    def _dismiss_donate(self, overlay):
+        overlay_opacity = overlay.graphicsEffect()
+        if not overlay_opacity:
+            overlay.deleteLater()
+            return
+
+        fade_out = QPropertyAnimation(overlay_opacity, b"opacity")
+        fade_out.setDuration(180)
+        fade_out.setStartValue(overlay_opacity.opacity())
+        fade_out.setEndValue(0.0)
+        fade_out.setEasingCurve(QEasingCurve.InCubic)
+        fade_out.finished.connect(overlay.deleteLater)
+        fade_out.start()
+        overlay._dismiss_anim = fade_out
 
     def _create_default_icon(self):
         pixmap = QPixmap(64, 64)

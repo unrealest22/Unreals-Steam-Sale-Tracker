@@ -14,23 +14,59 @@ from .api import get_editions
 
 
 class ImageLoader(QObject):
-    image_loaded = pyqtSignal(str, QPixmap)
+    # emits raw bytes from background thread, main thread makes the QPixmap
+    image_data_ready = pyqtSignal(str, bytes)
+    image_failed = pyqtSignal(str)
+
+    # backup thumbnails when header.jpg is missing
+    FALLBACK_SUFFIXES = ["capsule_616x353.jpg", "capsule_231x87.jpg"]
+
+    def __init__(self):
+        super().__init__()
+        self._alive = True
+        self.destroyed.connect(lambda: setattr(self, '_alive', False))
 
     def load(self, url, appid):
         def _fetch():
-            try:
-                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    data = resp.read()
-                pixmap = QPixmap()
-                pixmap.loadFromData(data)
-                self.image_loaded.emit(appid, pixmap)
-            except:
-                # images failing to load isnt critical, just show nothing
-                pass
+            base = url.rsplit("/", 1)[0]
+            urls_to_try = [url]
+            for suffix in self.FALLBACK_SUFFIXES:
+                candidate = f"{base}/{suffix}"
+                if candidate not in urls_to_try:
+                    urls_to_try.append(candidate)
+
+            for attempt_url in urls_to_try:
+                try:
+                    req = urllib.request.Request(attempt_url, headers={"User-Agent": "Mozilla/5.0"})
+                    with urllib.request.urlopen(req, timeout=10) as resp:
+                        data = resp.read()
+                    # steam returns tiny error pages instead of 404 sometimes
+                    if len(data) < 500:
+                        continue
+                    if self._alive:
+                        self.image_data_ready.emit(appid, data)
+                    return
+                except:
+                    continue
+            if self._alive:
+                self.image_failed.emit(appid)
 
         t = threading.Thread(target=_fetch, daemon=True)
         t.start()
+
+    def _make_pixmap(self, data):
+        pixmap = QPixmap()
+        pixmap.loadFromData(data)
+        return pixmap
+
+    @staticmethod
+    def crop_fill(pixmap, target_w, target_h):
+        pw, ph = pixmap.width(), pixmap.height()
+        scale = max(target_w / pw, target_h / ph)
+        scaled = pixmap.scaled(int(pw * scale), int(ph * scale), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        x = (scaled.width() - target_w) // 2
+        y = (scaled.height() - target_h) // 2
+        return scaled.copy(x, y, target_w, target_h)
 
 
 class GameCard(QFrame):
@@ -169,22 +205,24 @@ class SearchResultCard(QFrame):
     editions_failed = pyqtSignal(str)
     type_determined = pyqtSignal(str, str)
 
-    def __init__(self, appid, name, cc, delay=0):
+    def __init__(self, appid, name, cc, delay=0, image_url=""):
         super().__init__()
         self.appid = appid
         self.game_name = name
         self.cc = cc
         self.editions = []
         self.app_type = "game"
+        self._alive = True
         self.setObjectName("gameCard")
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        self.destroyed.connect(lambda: setattr(self, '_alive', False))
 
         self.editions_loaded.connect(self._on_editions_loaded)
         self.editions_failed.connect(self._on_editions_failed)
-        self._build_ui()
+        self._build_ui(image_url)
         self._load_editions(delay)
 
-    def _build_ui(self):
+    def _build_ui(self, image_url=""):
         self.layout_main = QVBoxLayout(self)
         self.layout_main.setContentsMargins(16, 14, 16, 14)
         self.layout_main.setSpacing(10)
@@ -193,7 +231,7 @@ class SearchResultCard(QFrame):
         top_row.setSpacing(14)
 
         self.image_label = QLabel()
-        self.image_label.setFixedSize(152, 71)
+        self.image_label.setFixedSize(200, 93)
         self.image_label.setStyleSheet(
             "background-color: #0b1018; border-radius: 5px; border: 1px solid #1e2e44;"
         )
@@ -202,8 +240,9 @@ class SearchResultCard(QFrame):
         top_row.addWidget(self.image_label, 0, Qt.AlignTop)
 
         self.image_loader = ImageLoader()
-        self.image_loader.image_loaded.connect(self._on_image_loaded)
-        header_url = f"https://cdn.cloudflare.steamstatic.com/steam/apps/{self.appid}/header.jpg"
+        self.image_loader.image_data_ready.connect(self._on_image_data)
+        self.image_loader.image_failed.connect(self._on_image_failed)
+        header_url = image_url or f"https://cdn.cloudflare.steamstatic.com/steam/apps/{self.appid}/header.jpg"
         self.image_loader.load(header_url, str(self.appid))
 
         text_col = QVBoxLayout()
@@ -255,10 +294,26 @@ class SearchResultCard(QFrame):
         shadow.setOffset(0, 4)
         self.setGraphicsEffect(shadow)
 
-    def _on_image_loaded(self, appid, pixmap):
-        if str(appid) == str(self.appid) and not pixmap.isNull():
-            scaled = pixmap.scaled(152, 71, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            self.image_label.setPixmap(scaled)
+    def _on_image_data(self, appid, data):
+        try:
+            if str(appid) == str(self.appid):
+                pixmap = self.image_loader._make_pixmap(data)
+                if not pixmap.isNull():
+                    scaled = pixmap.scaled(200, 93, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    self.image_label.setPixmap(scaled)
+        except RuntimeError:
+            pass
+
+    def _on_image_failed(self, appid):
+        try:
+            if str(appid) == str(self.appid):
+                self.image_label.setText("\u25a3")
+                self.image_label.setStyleSheet(
+                    "background-color: #0b1018; border-radius: 5px; border: 1px solid #1e2e44;"
+                    "color: #2a3a4e; font-size: 28px;"
+                )
+        except RuntimeError:
+            pass
 
     def _update_loading_text(self):
         self._dot_count = (self._dot_count + 1) % 4
@@ -269,14 +324,22 @@ class SearchResultCard(QFrame):
         def _fetch():
             if delay > 0:
                 time.sleep(delay)
+            if not self._alive:
+                return
             try:
                 editions, game_name, app_type = get_editions(self.appid, self.cc)
+                if not self._alive:
+                    return
                 if editions:
                     self.editions_loaded.emit(editions, game_name or self.game_name, app_type or "game")
                 else:
                     self.editions_failed.emit("No editions found")
+            except RuntimeError:
+                # widget got deleted while we were fetching, just bail
+                pass
             except Exception as e:
-                self.editions_failed.emit(str(e))
+                if self._alive:
+                    self.editions_failed.emit(str(e))
 
         t = threading.Thread(target=_fetch, daemon=True)
         t.start()
@@ -370,7 +433,8 @@ class SearchResultCard(QFrame):
         row_layout.setSpacing(8)
 
         ed_name = QLabel(edition["name"])
-        ed_name.setStyleSheet("color: #c7d5e0; font-size: 12px; font-weight: 600; qproperty-elideMode: ElideRight;")
+        ed_name.setStyleSheet("color: #c7d5e0; font-size: 12px; font-weight: 600;")
+        ed_name.setTextFormat(Qt.PlainText)
         ed_name.setToolTip(edition["name"])
         ed_name.setMinimumWidth(60)
         row_layout.addWidget(ed_name, 1)
@@ -451,7 +515,8 @@ class PopularSearchCard(QFrame):
         layout.addWidget(self.image_label, 0, Qt.AlignVCenter)
 
         self.image_loader = ImageLoader()
-        self.image_loader.image_loaded.connect(self._on_image_loaded)
+        self.image_loader.image_data_ready.connect(self._on_image_data)
+        self.image_loader.image_failed.connect(self._on_image_failed)
         self.image_loader.load(image_url, appid)
 
         info = QVBoxLayout()
@@ -522,7 +587,23 @@ class PopularSearchCard(QFrame):
         shadow.setOffset(0, 3)
         self.setGraphicsEffect(shadow)
 
-    def _on_image_loaded(self, appid, pixmap):
-        if appid == self.appid and not pixmap.isNull():
-            scaled = pixmap.scaled(252, 118, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            self.image_label.setPixmap(scaled)
+    def _on_image_data(self, appid, data):
+        try:
+            if appid == self.appid:
+                pixmap = self.image_loader._make_pixmap(data)
+                if not pixmap.isNull():
+                    scaled = pixmap.scaled(252, 118, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    self.image_label.setPixmap(scaled)
+        except RuntimeError:
+            pass
+
+    def _on_image_failed(self, appid):
+        try:
+            if appid == self.appid:
+                self.image_label.setText("\u25a3")
+                self.image_label.setStyleSheet(
+                    "background-color: #0b1018; border-radius: 6px; border: 1px solid #1e2e44;"
+                    "color: #2a3a4e; font-size: 32px;"
+                )
+        except RuntimeError:
+            pass

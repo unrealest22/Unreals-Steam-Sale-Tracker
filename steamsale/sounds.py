@@ -13,7 +13,7 @@ else:
     BASE_PATH = os.path.dirname(os.path.abspath(__file__))
 
 BUILTIN_SOUNDS = {
-    # Put ur funny note here
+    # The holy list of sounds (fire emoji)
     "none": "None (Silent)",
     "coin": "Coin",
     "alert": "Alert",

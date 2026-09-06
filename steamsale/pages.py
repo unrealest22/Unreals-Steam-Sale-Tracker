@@ -253,11 +253,11 @@ class SearchPage(QWidget):
                 self.games_container.addWidget(no_results)
                 return
             for i, result in enumerate(results[:10]):
-                self._add_search_result_card(result["appid"], result["name"], i * 0.5)
+                self._add_search_result_card(result["appid"], result["name"], i * 0.5, image_url=result.get("tiny_image", ""))
 
-    def _add_search_result_card(self, appid, name, delay=0):
+    def _add_search_result_card(self, appid, name, delay=0, image_url=""):
         cc = self.config.get("cc", "US")
-        card = SearchResultCard(appid, name, cc, delay=delay)
+        card = SearchResultCard(appid, name, cc, delay=delay, image_url=image_url)
         card.track_clicked.connect(self._on_track_clicked)
         card.type_determined.connect(self._on_card_type_determined)
         self.games_container.addWidget(card)

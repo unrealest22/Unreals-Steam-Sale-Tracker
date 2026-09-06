@@ -155,6 +155,19 @@ QLabel#creditsLabel {
     background: transparent;
 }
 
+QPushButton#donateBtn {
+    background-color: transparent;
+    color: #3e4e62;
+    border: 1px solid #1e2e44;
+    border-radius: 6px;
+    font-size: 11px;
+    padding: 2px 10px;
+}
+QPushButton#donateBtn:hover {
+    color: #e09040;
+    border-color: #e09040;
+}
+
 QLineEdit {
     background-color: #1a2236;
     color: #ffffff;

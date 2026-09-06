@@ -29,7 +29,7 @@ def search_game_by_name(name, cc="US"):
     data = fetch_json(url)
     if not data or "items" not in data:
         return []
-    return [{"appid": str(item["id"]), "name": item["name"]} for item in data["items"]]
+    return [{"appid": str(item["id"]), "name": item["name"], "tiny_image": item.get("tiny_image", "")} for item in data["items"]]
 
 def get_game_details(appid, cc="US"):
     params = urllib.parse.urlencode({"appids": appid, "cc": cc, "l": "english"})
@@ -100,11 +100,16 @@ def get_editions(appid, cc="US"):
 
     price_overview = details.get("price_overview", {})
     reliable_discount = 0
+    reliable_final_cents = 0
     if price_overview:
         reliable_discount = price_overview.get("discount_percent", 0)
         if isinstance(reliable_discount, str):
             try: reliable_discount = int(reliable_discount)
             except: reliable_discount = 0
+        reliable_final_cents = price_overview.get("final", 0)
+        if isinstance(reliable_final_cents, str):
+            try: reliable_final_cents = int(reliable_final_cents)
+            except: reliable_final_cents = 0
 
     package_groups = details.get("package_groups", [])
     if not package_groups:
@@ -122,25 +127,31 @@ def get_editions(appid, cc="US"):
     for group in package_groups:
         for sub in group.get("subs", []):
             edition_name = sub.get("option_text", sub.get("name", "Standard Edition"))
-            if " - " in edition_name:
-                edition_name = edition_name.rsplit(" - ", 1)[0]
             if edition_name.lower().startswith("buy "):
                 edition_name = edition_name[4:].strip()
-            if edition_name.strip().lower() == game_name.strip().lower():
+            # option_text is "GAME - EDITION - PRICE_HTML", gotta peel the layers
+            if " - " in edition_name:
+                edition_name = edition_name.rsplit(" - ", 1)[0]
+            if " - " in edition_name:
+                edition_name = edition_name.split(" - ", 1)[1].strip()
+            else:
                 edition_name = "Standard Edition"
 
             price_final = sub.get("price_in_cents_with_discount", 0)
             if isinstance(price_final, str):
                 try: price_final = int(price_final)
                 except: price_final = 0
+            price_final_raw = price_final
             price_final = price_final / 100
 
-            discount_pct = reliable_discount
-            if discount_pct == 0:
-                discount_pct = sub.get("percent_savings", 0)
-                if isinstance(discount_pct, str):
-                    try: discount_pct = int(discount_pct)
-                    except: discount_pct = 0
+            discount_pct = sub.get("percent_savings", 0)
+            if isinstance(discount_pct, str):
+                try: discount_pct = int(discount_pct)
+                except: discount_pct = 0
+
+            # percent_savings is always 0 for some reason, so we match by price instead
+            if discount_pct == 0 and reliable_discount > 0 and price_final_raw == reliable_final_cents:
+                discount_pct = reliable_discount
 
             if discount_pct > 0 and price_final > 0:
                 price_original = round(price_final / (1 - discount_pct / 100), 2)
@@ -189,7 +200,10 @@ def fetch_price_for_game(appid, edition_name, cc):
             try: initial = int(initial)
             except: initial = 0
 
-        if edition_name.lower() == "standard edition":
+        package_groups = details.get("package_groups", [])
+
+        # only use price_overview directly if there's no package_groups to compare against
+        if edition_name.lower() == "standard edition" and not package_groups:
             return {"is_free": False, "on_sale": discount > 0,
                     "discount_pct": discount,
                     "price_final": final / 100,
@@ -197,38 +211,56 @@ def fetch_price_for_game(appid, edition_name, cc):
                     "symbol": symbol, "currency": currency,
                     "game_name": game_name}
 
-        package_groups = details.get("package_groups", [])
         for group in package_groups:
             for sub in group.get("subs", []):
                 ed_name = sub.get("option_text", sub.get("name", "Standard Edition"))
-                if " - " in ed_name:
-                    ed_name = ed_name.rsplit(" - ", 1)[0]
                 if ed_name.lower().startswith("buy "):
                     ed_name = ed_name[4:].strip()
-                if ed_name.strip().lower() == game_name.strip().lower():
+                if " - " in ed_name:
+                    ed_name = ed_name.rsplit(" - ", 1)[0]
+                if " - " in ed_name:
+                    ed_name = ed_name.split(" - ", 1)[1].strip()
+                else:
                     ed_name = "Standard Edition"
 
-                if ed_name.lower() == edition_name.lower():
+                # old configs stored "GAME - EDITION", new ones just store "EDITION"
+                tracked = edition_name
+                if " - " in tracked:
+                    after_first = tracked.split(" - ", 1)[1].strip()
+                    tracked = after_first
+
+                if ed_name.lower() == tracked.lower():
                     sub_price = sub.get("price_in_cents_with_discount", 0)
                     if isinstance(sub_price, str):
                         try: sub_price = int(sub_price)
                         except: sub_price = 0
+                    sub_price_raw = sub_price
                     sub_price = sub_price / 100
 
-                    if discount > 0 and sub_price > 0:
-                        sub_original = round(sub_price / (1 - discount / 100), 2)
+                    sub_discount = sub.get("percent_savings", 0)
+                    if isinstance(sub_discount, str):
+                        try: sub_discount = int(sub_discount)
+                        except: sub_discount = 0
+
+                    # percent_savings is always 0 for some reason, so we match by price instead
+                    if sub_discount == 0 and discount > 0 and sub_price_raw == final:
+                        sub_discount = discount
+
+                    if sub_discount > 0 and sub_price > 0:
+                        sub_original = round(sub_price / (1 - sub_discount / 100), 2)
                     else:
                         sub_original = sub_price
 
-                    return {"is_free": False, "on_sale": discount > 0,
-                            "discount_pct": discount,
+                    return {"is_free": False, "on_sale": sub_discount > 0,
+                            "discount_pct": sub_discount,
                             "price_final": sub_price,
                             "price_original": sub_original,
                             "symbol": symbol, "currency": currency,
                             "game_name": game_name}
 
-        return {"is_free": False, "on_sale": discount > 0,
-                "discount_pct": discount,
+        # no matching edition found — price might be wrong but we got nothing better
+        return {"is_free": False, "on_sale": False,
+                "discount_pct": 0,
                 "price_final": final / 100,
                 "price_original": initial / 100,
                 "symbol": symbol, "currency": currency,
@@ -238,14 +270,22 @@ def fetch_price_for_game(appid, edition_name, cc):
     for group in package_groups:
         for sub in group.get("subs", []):
             ed_name = sub.get("option_text", sub.get("name", "Standard Edition"))
-            if " - " in ed_name:
-                ed_name = ed_name.rsplit(" - ", 1)[0]
             if ed_name.lower().startswith("buy "):
                 ed_name = ed_name[4:].strip()
-            if ed_name.strip().lower() == game_name.strip().lower():
+            if " - " in ed_name:
+                ed_name = ed_name.rsplit(" - ", 1)[0]
+            if " - " in ed_name:
+                ed_name = ed_name.split(" - ", 1)[1].strip()
+            else:
                 ed_name = "Standard Edition"
 
-            if ed_name.lower() == edition_name.lower() or edition_name.lower() == "standard edition":
+            # old configs stored "GAME - EDITION", new ones just store "EDITION"
+            tracked = edition_name
+            if " - " in tracked:
+                after_first = tracked.split(" - ", 1)[1].strip()
+                tracked = after_first
+
+            if ed_name.lower() == tracked.lower() or tracked.lower() == "standard edition":
                 discount = sub.get("percent_savings", 0)
                 if isinstance(discount, str):
                     try: discount = int(discount)
