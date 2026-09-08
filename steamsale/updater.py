@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (
 )
 
 GITHUB_REPO = "unrealest22/Unreals-Steam-Sale-Tracker"
-CURRENT_VERSION = "v0.27"
+CURRENT_VERSION = "v0.27.1"
 
 class UpdateChecker(QObject):
     update_found = pyqtSignal(str, str, str)
@@ -137,17 +137,16 @@ def download_and_install(download_url, parent_window):
 
         batch_path = os.path.join(temp_dir, "steam_updater.bat")
         batch_content = f"""@echo off
-taskkill /f /im UnrealsSaleTracker.exe >nul 2>&1
 timeout /t 2 /nobreak >nul
-del /q "%TEMP%\\_MEI*" >nul 2>&1
-"{installer_exe}" /SILENT /NORESTART /NOCANCEL
-timeout /t 3 /nobreak >nul
 start "" "{install_exe}"
 del "%~f0"
 """
         with open(batch_path, "w") as f:
             f.write(batch_content)
 
+        # launch installer directly from the app (so it's the parent process), then quit
+        subprocess.Popen([installer_exe, '/SILENT', '/NORESTART', '/NOCANCEL'],
+                         creationflags=subprocess.CREATE_NO_WINDOW)
         subprocess.Popen(['cmd', '/c', batch_path], creationflags=subprocess.CREATE_NO_WINDOW)
         os._exit(0)
 
