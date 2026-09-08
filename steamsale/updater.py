@@ -128,24 +128,8 @@ def download_and_install(download_url, parent_window):
 
         progress.close()
 
-        if getattr(sys, 'frozen', False):
-            install_dir = os.path.dirname(sys.executable)
-        else:
-            install_dir = os.getcwd()
-
-        install_exe = os.path.join(install_dir, "UnrealsSaleTracker.exe")
-
-        batch_path = os.path.join(temp_dir, "steam_updater.bat")
-        batch_content = f"""@echo off
-"{installer_exe}" /SILENT /NORESTART /NOCANCEL
-timeout /t 3 /nobreak >nul
-start "" "{install_exe}"
-del "%~f0"
-"""
-        with open(batch_path, "w") as f:
-            f.write(batch_content)
-
-        subprocess.Popen(['cmd', '/c', batch_path], creationflags=subprocess.CREATE_NO_WINDOW)
+        subprocess.Popen([installer_exe, '/SILENT', '/NORESTART', '/NOCANCEL'],
+                         creationflags=subprocess.CREATE_NO_WINDOW)
         os._exit(0)
 
     except Exception as e:
