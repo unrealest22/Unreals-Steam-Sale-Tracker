@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (
 )
 
 GITHUB_REPO = "unrealest22/Unreals-Steam-Sale-Tracker"
-CURRENT_VERSION = "v0.27.1"
+CURRENT_VERSION = "v0.27.2"
 
 class UpdateChecker(QObject):
     update_found = pyqtSignal(str, str, str)

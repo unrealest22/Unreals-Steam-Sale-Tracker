@@ -1,4 +1,5 @@
 import json
+import re
 import time
 import urllib.request
 import urllib.parse
@@ -23,6 +24,17 @@ def fetch_json(url, retries=4, delay=2):
                 time.sleep(delay)
     return None
 
+def parse_sub_discount(sub):
+    text = sub.get("percent_savings_text", "") or ""
+    match = re.search(r"(\d+)\s*%", text)
+    if match:
+        return int(match.group(1))
+    raw = sub.get("percent_savings", 0)
+    if isinstance(raw, str):
+        try: raw = int(raw)
+        except: raw = 0
+    return raw
+
 def search_game_by_name(name, cc="US"):
     params = urllib.parse.urlencode({"term": name, "l": "english", "cc": cc})
     url = f"{STEAM_SEARCH_API}?{params}"
@@ -35,10 +47,12 @@ def get_game_details(appid, cc="US"):
     params = urllib.parse.urlencode({"appids": appid, "cc": cc, "l": "english"})
     url = f"{STEAM_STORE_API}?{params}"
     data = fetch_json(url)
-    if not data or appid not in data:
+    if not data:
         return None
-    app_data = data[appid]
-    if not app_data.get("success"):
+    app_data = data.get(appid)
+    if app_data is None and len(data) == 1:
+        app_data = next(iter(data.values()))
+    if not app_data or not app_data.get("success"):
         return None
     return app_data["data"]
 
@@ -144,12 +158,8 @@ def get_editions(appid, cc="US"):
             price_final_raw = price_final
             price_final = price_final / 100
 
-            discount_pct = sub.get("percent_savings", 0)
-            if isinstance(discount_pct, str):
-                try: discount_pct = int(discount_pct)
-                except: discount_pct = 0
+            discount_pct = parse_sub_discount(sub)
 
-            # percent_savings is always 0 for some reason, so we match by price instead
             if discount_pct == 0 and reliable_discount > 0 and price_final_raw == reliable_final_cents:
                 discount_pct = reliable_discount
 
@@ -237,12 +247,8 @@ def fetch_price_for_game(appid, edition_name, cc):
                     sub_price_raw = sub_price
                     sub_price = sub_price / 100
 
-                    sub_discount = sub.get("percent_savings", 0)
-                    if isinstance(sub_discount, str):
-                        try: sub_discount = int(sub_discount)
-                        except: sub_discount = 0
+                    sub_discount = parse_sub_discount(sub)
 
-                    # percent_savings is always 0 for some reason, so we match by price instead
                     if sub_discount == 0 and discount > 0 and sub_price_raw == final:
                         sub_discount = discount
 
@@ -286,10 +292,7 @@ def fetch_price_for_game(appid, edition_name, cc):
                 tracked = after_first
 
             if ed_name.lower() == tracked.lower() or tracked.lower() == "standard edition":
-                discount = sub.get("percent_savings", 0)
-                if isinstance(discount, str):
-                    try: discount = int(discount)
-                    except: discount = 0
+                discount = parse_sub_discount(sub)
                 price_final = sub.get("price_in_cents_with_discount", 0)
                 if isinstance(price_final, str):
                     try: price_final = int(price_final)
