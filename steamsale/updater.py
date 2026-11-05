@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import shutil
 import threading
+import base64
 
 from PyQt5.QtCore import QObject, pyqtSignal
 from PyQt5.QtWidgets import (
@@ -15,7 +16,10 @@ from PyQt5.QtWidgets import (
 )
 
 GITHUB_REPO = "unrealest22/Unreals-Steam-Sale-Tracker"
-CURRENT_VERSION = "v0.27.2"
+CURRENT_VERSION = "v0.30"
+
+def _version_tuple(tag):
+    return tuple(int(n) for n in re.findall(r"\d+", tag or ""))
 
 class UpdateChecker(QObject):
     update_found = pyqtSignal(str, str, str)
@@ -32,7 +36,7 @@ class UpdateChecker(QObject):
                     data = json.loads(resp.read().decode("utf-8"))
 
                 latest_version = data.get("tag_name", "v0.0")
-                if latest_version > CURRENT_VERSION:
+                if _version_tuple(latest_version) > _version_tuple(CURRENT_VERSION):
                     download_url = None
                     for asset in data.get("assets", []):
                         if asset["name"].endswith("_Setup.exe"):
@@ -118,6 +122,7 @@ def download_and_install(download_url, parent_window):
         progress.setText("Downloading update... Please wait.")
         progress.setStandardButtons(QMessageBox.NoButton)
         progress.show()
+        QApplication.processEvents()
 
         temp_dir = tempfile.gettempdir()
         installer_exe = os.path.join(temp_dir, "UnrealsSaleTracker_Setup.exe")
@@ -128,9 +133,44 @@ def download_and_install(download_url, parent_window):
 
         progress.close()
 
-        subprocess.Popen([installer_exe, '/SILENT', '/NORESTART', '/NOCANCEL'],
-                         creationflags=subprocess.CREATE_NO_WINDOW)
+        _launch_installer_after_exit(installer_exe)
+
+        tray = getattr(parent_window, "tray_icon", None)
+        if tray is not None:
+            tray.hide()
         os._exit(0)
 
     except Exception as e:
         QMessageBox.critical(parent_window, "Update Failed", f"Failed to download update:\n{e}")
+
+def _ps_quote(s):
+    return "'" + str(s).replace("'", "''") + "'"
+
+def _launch_installer_after_exit(installer_exe):
+    frozen = getattr(sys, "frozen", False)
+    pids = [os.getpid()]
+    if frozen:
+        pids.append(os.getppid())
+
+    exe_name = os.path.splitext(os.path.basename(sys.executable))[0]
+    lines = [
+        "$ErrorActionPreference = 'SilentlyContinue'",
+        f"foreach ($p in @({','.join(str(p) for p in pids)})) {{ Wait-Process -Id $p -Timeout 60 }}",
+        "Start-Sleep -Milliseconds 500",
+        f"Start-Process -FilePath {_ps_quote(installer_exe)} "
+        "-ArgumentList '/SILENT','/NORESTART','/NOCANCEL','/SUPPRESSMSGBOXES' -Wait",
+    ]
+    if frozen:
+        lines.append("Start-Sleep -Seconds 1")
+        lines.append(
+            f"if (-not (Get-Process -Name {_ps_quote(exe_name)})) "
+            f"{{ Start-Process -FilePath {_ps_quote(sys.executable)} }}"
+        )
+
+    encoded = base64.b64encode("\n".join(lines).encode("utf-16-le")).decode("ascii")
+    subprocess.Popen(
+        ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+         "-WindowStyle", "Hidden", "-EncodedCommand", encoded],
+        creationflags=subprocess.CREATE_NO_WINDOW,
+        close_fds=True,
+    )
