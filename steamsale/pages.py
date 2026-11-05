@@ -6,15 +6,16 @@ import sys
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QComboBox, QCheckBox, QFrame, QScrollArea, QStackedWidget, QFileDialog,
-    QSizePolicy, QSpacerItem
+    QSizePolicy, QSpacerItem, QGraphicsDropShadowEffect
 )
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QPropertyAnimation, QEasingCurve
-from PyQt5.QtGui import QCursor
+from PyQt5.QtCore import Qt, QEvent, QTimer, pyqtSignal
+from PyQt5.QtGui import QCursor, QColor
 
 from .config import CC_MAP, DLC_TYPES, save_config, get_currency_info, format_price
 from .api import search_game_by_name, fetch_featured_games
 from .sounds import BUILTIN_SOUNDS, play_notification_sound
 from .widgets import GameCard, SearchResultCard, PopularSearchCard
+from .wishlist import normalize_wishlist_profile, fetch_wishlist
 
 
 class SearchPage(QWidget):
@@ -355,7 +356,7 @@ class TrackedPage(QWidget):
             if item.widget():
                 item.widget().deleteLater()
 
-        games = self.config.get("tracked_games", [])
+        games = [game for game in self.config.get("tracked_games", []) if game.get("source") != "wishlist"]
         self.count_label.setText(f"{len(games)} game{'s' if len(games) != 1 else ''} tracked")
 
         cc = self.config.get("cc", "US")
@@ -730,19 +731,438 @@ Hidden=false
 
 
 class LinkSteamPage(QWidget):
-    def __init__(self):
+    wishlist_synced = pyqtSignal(list)
+    wishlist_tracking_changed = pyqtSignal(list)
+    account_changed = pyqtSignal(bool)
+    sync_finished = pyqtSignal(str, object, str)
+
+    def __init__(self, config):
         super().__init__()
+        self.config = config
+        self.syncing = False
+        self._card_map = {}
+        self.unlink_overlay = None
+        self.unlink_overlay_host = None
+        self.sync_finished.connect(self._on_sync_finished)
+        self.sync_timer = QTimer(self)
+        self.sync_timer.setInterval(30 * 60 * 1000)
+        self.sync_timer.timeout.connect(self.sync_wishlist)
+
         layout = QVBoxLayout(self)
-        layout.setAlignment(Qt.AlignCenter)
         layout.setContentsMargins(40, 36, 40, 36)
+        layout.setSpacing(16)
 
-        title = QLabel("Coming soon!")
-        title.setObjectName("titleLabel")
-        title.setAlignment(Qt.AlignCenter)
-        layout.addWidget(title)
+        header = QHBoxLayout()
+        self.title = QLabel()
+        self.title.setObjectName("titleLabel")
+        self.title.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        header.addWidget(self.title)
+        header.addStretch()
 
-        subtitle = QLabel("Steam account linking will be available soon, I think.\nYou'll be able to keep track of your WISHLIST!!")
-        subtitle.setObjectName("subtitleLabel")
-        subtitle.setAlignment(Qt.AlignCenter)
-        subtitle.setWordWrap(True)
-        layout.addWidget(subtitle)
+        self.unlink_button = QPushButton("Unlink account")
+        self.unlink_button.setObjectName("unlinkBtn")
+        self.unlink_button.setCursor(QCursor(Qt.PointingHandCursor))
+        self.unlink_button.clicked.connect(self._confirm_unlink)
+        header.addWidget(self.unlink_button)
+        layout.addLayout(header)
+
+        self.subtitle = QLabel()
+        self.subtitle.setObjectName("subtitleLabel")
+        self.subtitle.setWordWrap(True)
+        self.subtitle.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        layout.addWidget(self.subtitle)
+
+        self.link_panel = QWidget()
+        self.link_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        link_layout = QVBoxLayout(self.link_panel)
+        link_layout.setContentsMargins(0, 20, 0, 0)
+        link_layout.setSpacing(12)
+
+        details = QLabel("Enter your public Steam profile URL or SteamID64. Your wishlist must be visible to everyone.")
+        details.setObjectName("statusLabel")
+        details.setWordWrap(True)
+        details.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        link_layout.addWidget(details)
+
+        self.profile_input = QLineEdit()
+        self.profile_input.setPlaceholderText("Steam profile URL or SteamID64")
+        self.profile_input.setMinimumHeight(46)
+        self.profile_input.returnPressed.connect(self._link_account)
+        link_layout.addWidget(self.profile_input)
+
+        self.link_button = QPushButton("Link Steam Wishlist")
+        self.link_button.setObjectName("primaryBtn")
+        self.link_button.setCursor(QCursor(Qt.PointingHandCursor))
+        self.link_button.setFixedHeight(42)
+        self.link_button.clicked.connect(self._link_account)
+        link_layout.addWidget(self.link_button, alignment=Qt.AlignLeft)
+        layout.addWidget(self.link_panel)
+
+        self.wishlist_summary = QLabel()
+        self.wishlist_summary.setObjectName("statusLabel")
+        self.wishlist_summary.setWordWrap(True)
+        self.wishlist_summary.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        layout.addWidget(self.wishlist_summary)
+
+        self.sync_button = QPushButton("Sync Wishlist")
+        self.sync_button.setObjectName("trackBtn")
+        self.sync_button.setCursor(QCursor(Qt.PointingHandCursor))
+        self.sync_button.setFixedHeight(38)
+        self.sync_button.clicked.connect(self.sync_wishlist)
+        layout.addWidget(self.sync_button, alignment=Qt.AlignLeft)
+
+        self.link_spacer = QWidget()
+        self.link_spacer.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Expanding)
+        layout.addWidget(self.link_spacer, 1)
+
+        self.games_label = QLabel("WISHLIST GAMES")
+        self.games_label.setObjectName("sectionLabel")
+        self.games_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        layout.addWidget(self.games_label)
+
+        self.games_scroll = QScrollArea()
+        self.games_scroll.setWidgetResizable(True)
+        self.games_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.games_widget = QWidget()
+        self.games_layout = QVBoxLayout(self.games_widget)
+        self.games_layout.setSpacing(12)
+        self.games_layout.setContentsMargins(0, 0, 0, 0)
+        self.games_layout.addStretch()
+        self.games_scroll.setWidget(self.games_widget)
+        self.games_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        layout.addWidget(self.games_scroll, 1)
+
+        self._show_linked_state(bool(self.config.get("steam_wishlist")))
+        if self.config.get("steam_wishlist"):
+            self.sync_timer.start()
+            QTimer.singleShot(1200, self.sync_wishlist)
+
+    def _show_linked_state(self, linked):
+        self.title.setText("Wishlist" if linked else "Link Steam Wishlist")
+        self.subtitle.setText("Track your steam wishlist here!" if linked else "Connect your public Steam wishlist to track sales automatically.")
+        self.link_panel.setVisible(not linked)
+        self.link_spacer.setVisible(not linked)
+        self.wishlist_summary.setVisible(linked)
+        self.sync_button.setVisible(linked)
+        self.unlink_button.setVisible(linked)
+        self.games_label.setVisible(linked)
+        self.games_scroll.setVisible(linked)
+        if linked:
+            wishlist = self.config.get("steam_wishlist", {})
+            total = len(wishlist.get("appids", []))
+            selected = len(self._selected_wishlist_appids())
+            self.wishlist_summary.setText(f"Tracking {selected} of {total} wishlist games.")
+        self.refresh_wishlist_games()
+
+    def _selected_wishlist_appids(self):
+        wishlist = self.config.get("steam_wishlist", {})
+        appids = {str(appid) for appid in wishlist.get("appids", [])}
+        selected = wishlist.get("tracked_appids")
+        if selected is None:
+            return appids
+        return appids.intersection(str(appid) for appid in selected)
+
+    def refresh_wishlist_games(self):
+        self._card_map.clear()
+        while self.games_layout.count() > 1:
+            item = self.games_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        cc = self.config.get("cc", "US")
+        last_prices = self.config.get("last_prices", {})
+        tracked_games = {str(game.get("appid")): game for game in self.config.get("tracked_games", [])}
+        wishlist = self.config.get("steam_wishlist", {})
+        saved_games = {str(game.get("appid")): game for game in wishlist.get("games", [])}
+        appids = wishlist.get("appids", [])
+        selected_appids = self._selected_wishlist_appids()
+        for appid in appids:
+            game = tracked_games.get(str(appid), {})
+            saved_game = saved_games.get(str(appid), {})
+            edition = game.get("edition", "Standard Edition")
+            key = f"{appid}_{edition}_{cc}"
+            card = GameCard(
+                appid, self._wishlist_game_name(appid, saved_game.get("name"), game.get("name")), edition,
+                last_prices.get(key), removable=False, trackable=True,
+                tracking_enabled=str(appid) in selected_appids
+            )
+            card.tracking_toggled.connect(self._set_wishlist_tracking)
+            self.games_layout.insertWidget(self.games_layout.count() - 1, card)
+            self._card_map[(appid, edition)] = card
+
+        if not appids:
+            empty = QLabel("Your wishlist games will appear here after syncing.")
+            empty.setObjectName("statusLabel")
+            empty.setAlignment(Qt.AlignCenter)
+            empty.setStyleSheet("color: #5a6a7e; font-size: 14px; padding: 32px 0;")
+            self.games_layout.insertWidget(0, empty)
+
+    @staticmethod
+    def _is_fallback_game_name(name):
+        return not name or name.lower().startswith("steam app ")
+
+    @classmethod
+    def _wishlist_game_name(cls, appid, *names):
+        for name in names:
+            if name and not cls._is_fallback_game_name(name):
+                return name
+        for name in names:
+            if name:
+                return name
+        return f"Steam App {appid}"
+
+    def update_card_price(self, appid, edition, price_info):
+        card = self._card_map.get((appid, edition))
+        if card:
+            card.update_price(price_info)
+
+    def _set_wishlist_tracking(self, appid, enabled):
+        wishlist = self.config.get("steam_wishlist", {})
+        appids = {str(value) for value in wishlist.get("appids", [])}
+        selected = self._selected_wishlist_appids()
+        if enabled:
+            selected.add(str(appid))
+        else:
+            selected.discard(str(appid))
+
+        added = []
+        if not enabled:
+            self.config["tracked_games"] = [
+                game for game in self.config.get("tracked_games", [])
+                if not (game.get("source") == "wishlist" and str(game.get("appid")) == str(appid))
+            ]
+        else:
+            entry = next(
+                (game for game in self.config.get("tracked_games", [])
+                 if str(game.get("appid")) == str(appid)),
+                None
+            )
+            if not entry:
+                card = self._card_map.get((str(appid), "Standard Edition"))
+                name = card.name_label.text() if card else f"Steam App {appid}"
+                entry = {"appid": str(appid), "name": name, "edition": "Standard Edition", "source": "wishlist"}
+                self.config.setdefault("tracked_games", []).append(entry)
+                added.append(entry)
+
+        wishlist["tracked_appids"] = sorted(appids.intersection(selected))
+        save_config(self.config)
+        total = len(appids)
+        count = len(wishlist["tracked_appids"])
+        self.wishlist_summary.setText(f"Tracking {count} of {total} wishlist games.")
+        self.wishlist_tracking_changed.emit(added)
+
+    def _link_account(self):
+        profile = normalize_wishlist_profile(self.profile_input.text())
+        if not profile:
+            self.wishlist_summary.setText("Enter a valid Steam profile URL or SteamID64.")
+            self.wishlist_summary.setVisible(True)
+            return
+        self._start_sync(profile)
+
+    def sync_wishlist(self):
+        wishlist = self.config.get("steam_wishlist")
+        if wishlist:
+            self._start_sync(wishlist.get("profile", ""))
+
+    def _start_sync(self, profile):
+        if self.syncing or not profile:
+            return
+        self.syncing = True
+        self.link_button.setEnabled(False)
+        self.sync_button.setEnabled(False)
+        self.unlink_button.setEnabled(False)
+        self.wishlist_summary.setVisible(True)
+        self.wishlist_summary.setText("Loading your Steam wishlist...")
+
+        def _fetch():
+            try:
+                games = fetch_wishlist(profile, self.config.get("cc", "US"))
+                self.sync_finished.emit(profile, games, "")
+            except Exception as error:
+                message = str(error) or "Could not read this wishlist. Make sure it is public and try again."
+                self.sync_finished.emit(profile, None, message)
+
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    def _on_sync_finished(self, profile, games, error):
+        self.syncing = False
+        self.link_button.setEnabled(True)
+        self.sync_button.setEnabled(True)
+        self.unlink_button.setEnabled(True)
+        if error:
+            self.wishlist_summary.setText(error)
+            self.wishlist_summary.setVisible(True)
+            self.wishlist_synced.emit([])
+            return
+
+        previous = self.config.get("steam_wishlist", {})
+        was_linked = bool(previous)
+        saved_names = {
+            str(game.get("appid")): game.get("name")
+            for game in previous.get("games", [])
+        }
+        tracked_names = {
+            str(game.get("appid")): game.get("name")
+            for game in self.config.get("tracked_games", [])
+        }
+        for game in games:
+            appid = str(game["appid"])
+            if self._is_fallback_game_name(game.get("name")):
+                game["name"] = self._wishlist_game_name(
+                    appid, saved_names.get(appid), tracked_names.get(appid)
+                )
+        current_appids = {str(game["appid"]) for game in games}
+        previous_selected = previous.get("tracked_appids")
+        selected_appids = (
+            {str(appid) for appid in previous_selected}.intersection(current_appids)
+            if previous_selected is not None
+            else set()
+        )
+        removed_appids = {
+            str(game.get("appid")) for game in self.config.get("tracked_games", [])
+            if game.get("source") == "wishlist" and str(game.get("appid")) not in selected_appids
+        }
+        removed_games = [
+            game for game in self.config.get("tracked_games", [])
+            if game.get("source") == "wishlist" and str(game.get("appid")) in removed_appids
+        ]
+        self.config["tracked_games"] = [
+            game for game in self.config.get("tracked_games", [])
+            if not (game.get("source") == "wishlist" and str(game.get("appid")) in removed_appids)
+        ]
+        for game in removed_games:
+            edition = game.get("edition", "Standard Edition")
+            self.config.get("last_prices", {}).pop(f"{game['appid']}_{edition}_{self.config.get('cc', 'US')}", None)
+
+        added = []
+        for game in games:
+            appid = str(game["appid"])
+            if appid not in selected_appids:
+                continue
+            entry = next((item for item in self.config["tracked_games"] if item.get("appid") == appid and item.get("edition", "Standard Edition") == "Standard Edition"), None)
+            if entry:
+                if entry.get("source") == "wishlist":
+                    entry["name"] = game["name"]
+                continue
+            entry = {"appid": appid, "name": game["name"], "edition": "Standard Edition", "source": "wishlist"}
+            self.config["tracked_games"].append(entry)
+            added.append(entry)
+
+        self.config["steam_wishlist"] = {
+            "profile": profile,
+            "appids": sorted(current_appids),
+            "tracked_appids": sorted(selected_appids),
+            "games": [{"appid": str(game["appid"]), "name": game["name"]} for game in games],
+        }
+        save_config(self.config)
+        self._show_linked_state(True)
+        self.wishlist_summary.setText(f"Tracking {len(selected_appids)} of {len(current_appids)} wishlist games.")
+        self.refresh_wishlist_games()
+        self.sync_timer.start()
+        if not was_linked:
+            self.account_changed.emit(True)
+        self.wishlist_synced.emit(added)
+
+    def _confirm_unlink(self):
+        if self.unlink_overlay:
+            return
+
+        host = self.window().centralWidget()
+        if not host:
+            host = self
+        host.installEventFilter(self)
+
+        overlay = QWidget(host)
+        overlay.setObjectName("unlinkConfirmOverlay")
+        overlay.setAttribute(Qt.WA_StyledBackground, True)
+        overlay.setGeometry(host.rect())
+
+        overlay_layout = QVBoxLayout(overlay)
+        overlay_layout.setContentsMargins(24, 24, 24, 24)
+        overlay_layout.addStretch()
+
+        card = QFrame()
+        card.setObjectName("unlinkConfirmPanel")
+        card.setFixedWidth(min(500, max(320, self.width() - 48)))
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(28, 24, 28, 24)
+        card_layout.setSpacing(14)
+
+        title = QLabel("Unlink Steam Wishlist?")
+        title.setObjectName("unlinkConfirmTitle")
+        card_layout.addWidget(title)
+
+        message = QLabel("Are you sure you want to unlink your steam account, your wishlist won't be tracked anymore")
+        message.setObjectName("unlinkConfirmText")
+        message.setWordWrap(True)
+        card_layout.addWidget(message)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+
+        yes_button = QPushButton("Yes")
+        yes_button.setObjectName("confirmUnlinkYes")
+        yes_button.setCursor(QCursor(Qt.PointingHandCursor))
+        yes_button.setFixedSize(88, 38)
+        yes_button.clicked.connect(self._unlink_account)
+        buttons.addWidget(yes_button)
+
+        no_button = QPushButton("No")
+        no_button.setObjectName("confirmUnlinkNo")
+        no_button.setCursor(QCursor(Qt.PointingHandCursor))
+        no_button.setFixedSize(88, 38)
+        no_button.clicked.connect(self._cancel_unlink)
+        buttons.addWidget(no_button)
+        card_layout.addLayout(buttons)
+
+        yes_glow = QGraphicsDropShadowEffect(yes_button)
+        yes_glow.setColor(QColor("#8ed34a"))
+        yes_glow.setBlurRadius(18)
+        yes_glow.setOffset(0, 0)
+        yes_button.setGraphicsEffect(yes_glow)
+
+        no_glow = QGraphicsDropShadowEffect(no_button)
+        no_glow.setColor(QColor("#df535b"))
+        no_glow.setBlurRadius(18)
+        no_glow.setOffset(0, 0)
+        no_button.setGraphicsEffect(no_glow)
+
+        overlay_layout.addWidget(card, 0, Qt.AlignHCenter)
+        overlay_layout.addStretch()
+
+        overlay.show()
+        overlay.raise_()
+        self.unlink_overlay = overlay
+        self.unlink_overlay_host = host
+
+    def _cancel_unlink(self):
+        self._dismiss_unlink_confirmation()
+
+    def _dismiss_unlink_confirmation(self):
+        if self.unlink_overlay:
+            self.unlink_overlay.hide()
+            self.unlink_overlay.deleteLater()
+            self.unlink_overlay = None
+            if self.unlink_overlay_host:
+                self.unlink_overlay_host.removeEventFilter(self)
+                self.unlink_overlay_host = None
+
+    def _unlink_account(self):
+        self._dismiss_unlink_confirmation()
+        self.sync_timer.stop()
+        removed = [game for game in self.config.get("tracked_games", []) if game.get("source") == "wishlist"]
+        self.config["tracked_games"] = [game for game in self.config.get("tracked_games", []) if game.get("source") != "wishlist"]
+        for game in removed:
+            edition = game.get("edition", "Standard Edition")
+            self.config.get("last_prices", {}).pop(f"{game['appid']}_{edition}_{self.config.get('cc', 'US')}", None)
+        self.config.pop("steam_wishlist", None)
+        save_config(self.config)
+        self._show_linked_state(False)
+        self.account_changed.emit(False)
+        self.wishlist_synced.emit([])
+
+    def eventFilter(self, watched, event):
+        if watched is self.unlink_overlay_host and event.type() == QEvent.Resize and self.unlink_overlay:
+            self.unlink_overlay.setGeometry(watched.rect())
+            self.unlink_overlay.raise_()
+        return super().eventFilter(watched, event)

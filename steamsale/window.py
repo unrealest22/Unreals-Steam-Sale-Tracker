@@ -7,7 +7,10 @@ from PyQt5.QtWidgets import (
     QFrame, QStackedWidget, QSystemTrayIcon, QMenu, QAction, QApplication,
     QMessageBox, QGraphicsOpacityEffect, QSizePolicy
 )
-from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, QSize, QPoint
+from PyQt5.QtCore import (
+    Qt, QTimer, QPropertyAnimation, QEasingCurve, QSize, QPoint,
+    QParallelAnimationGroup, QSequentialAnimationGroup, QPauseAnimation
+)
 from PyQt5.QtGui import QIcon, QColor, QFont, QPixmap, QCursor, QPainter, QLinearGradient
 
 from .config import format_price
@@ -125,7 +128,7 @@ class MainWindow(QMainWindow):
             ("Search", 0, "\U0001F50D"),
             ("Tracked Games", 1, "\u2764\uFE0F"),
             ("Settings", 2, "\u2699\uFE0F"),
-            ("Link Steam Account", 3, "\U0001F517"),
+            ("Link Steam Wishlist", 3, "\U0001F517"),
         ]
 
         for label, idx, _icon in nav_items:
@@ -202,7 +205,7 @@ class MainWindow(QMainWindow):
         self.search_page = SearchPage(config)
         self.tracked_page = TrackedPage(config)
         self.settings_page = SettingsPage(config)
-        self.link_steam_page = LinkSteamPage()
+        self.link_steam_page = LinkSteamPage(config)
         self.stack.addWidget(self.search_page)
         self.stack.addWidget(self.tracked_page)
         self.stack.addWidget(self.settings_page)
@@ -214,6 +217,10 @@ class MainWindow(QMainWindow):
         self.search_page.game_added.connect(self._on_game_added)
         self.tracked_page.refresh_requested.connect(self._refresh_prices)
         self.settings_page.settings_changed.connect(self._on_settings_changed)
+        self.link_steam_page.wishlist_synced.connect(self._on_wishlist_synced)
+        self.link_steam_page.wishlist_tracking_changed.connect(self._on_wishlist_tracking_changed)
+        self.link_steam_page.account_changed.connect(self._on_wishlist_account_changed)
+        self.nav_buttons[3].setText("  Wishlist" if config.get("steam_wishlist") else "  Link Steam Wishlist")
 
         self.tray_icon = QSystemTrayIcon(self)
         self.tray_icon.setIcon(self.app_icon)
@@ -398,30 +405,64 @@ class MainWindow(QMainWindow):
             self.tracked_page.refresh_cards()
 
     def _show_toast(self, message):
-        toast = QLabel(message, self)
-        toast.setObjectName("toastLabel")
-        toast.setAlignment(Qt.AlignCenter)
-        toast.setWordWrap(True)
-        toast.adjustSize()
-        toast.setFixedWidth(max(toast.width() + 50, 280))
-        toast.setFixedHeight(toast.height() + 24)
+        host = self.centralWidget()
+        toast = QFrame(host)
+        toast.setObjectName("toastFrame")
+        toast.setFixedWidth(340)
 
-        x = self.width() - toast.width() - 28
-        y = self.height() - toast.height() - 28
-        toast.move(x, y)
-        toast.raise_()
-        toast.show()
+        layout = QHBoxLayout(toast)
+        layout.setContentsMargins(18, 13, 18, 13)
+
+        label = QLabel(message)
+        label.setObjectName("toastMessage")
+        label.setWordWrap(True)
+        layout.addWidget(label)
+
+        toast.adjustSize()
+        end_x = host.width() - toast.width() - 24
+        end_y = host.height() - toast.height() - 24
+        toast.move(end_x + 28, end_y)
 
         effect = QGraphicsOpacityEffect(toast)
+        effect.setOpacity(0)
         toast.setGraphicsEffect(effect)
-        anim = QPropertyAnimation(effect, b"opacity", toast)
-        anim.setDuration(400)
-        anim.setStartValue(1.0)
-        anim.setEndValue(0.0)
-        anim.setEasingCurve(QEasingCurve.OutCubic)
+        toast.show()
+        toast.raise_()
 
-        QTimer.singleShot(2200, anim.start)
-        anim.finished.connect(toast.deleteLater)
+        enter = QParallelAnimationGroup(toast)
+        enter_position = QPropertyAnimation(toast, b"pos", enter)
+        enter_position.setDuration(260)
+        enter_position.setStartValue(QPoint(end_x + 28, end_y))
+        enter_position.setEndValue(QPoint(end_x, end_y))
+        enter_position.setEasingCurve(QEasingCurve.OutCubic)
+        enter_opacity = QPropertyAnimation(effect, b"opacity", enter)
+        enter_opacity.setDuration(220)
+        enter_opacity.setStartValue(0)
+        enter_opacity.setEndValue(1)
+        enter_opacity.setEasingCurve(QEasingCurve.OutCubic)
+        enter.addAnimation(enter_position)
+        enter.addAnimation(enter_opacity)
+
+        sequence = QSequentialAnimationGroup(toast)
+        sequence.addAnimation(enter)
+        sequence.addAnimation(QPauseAnimation(2200))
+
+        exit_group = QParallelAnimationGroup(sequence)
+        exit_position = QPropertyAnimation(toast, b"pos", exit_group)
+        exit_position.setDuration(240)
+        exit_position.setStartValue(QPoint(end_x, end_y))
+        exit_position.setEndValue(QPoint(end_x, end_y - 10))
+        exit_position.setEasingCurve(QEasingCurve.InCubic)
+        exit_opacity = QPropertyAnimation(effect, b"opacity", exit_group)
+        exit_opacity.setDuration(240)
+        exit_opacity.setStartValue(1)
+        exit_opacity.setEndValue(0)
+        exit_opacity.setEasingCurve(QEasingCurve.InCubic)
+        exit_group.addAnimation(exit_position)
+        exit_group.addAnimation(exit_opacity)
+        sequence.addAnimation(exit_group)
+        sequence.finished.connect(toast.deleteLater)
+        sequence.start()
 
     def _on_game_added(self, game):
         self.tracked_page.refresh_cards()
@@ -429,8 +470,32 @@ class MainWindow(QMainWindow):
         self._show_toast(f"{game['name']} added to tracked games")
         self.checker.check_single(game["appid"], game.get("edition", "Standard Edition"), game["name"])
 
+    def _on_wishlist_synced(self, added):
+        self.tracked_page.refresh_cards()
+        self.link_steam_page.refresh_wishlist_games()
+        tracked_appids = {str(game.get("appid")) for game in self.config.get("tracked_games", [])}
+        wishlist = self.config.get("steam_wishlist", {})
+        display_games = [
+            {"appid": str(appid), "edition": "Standard Edition"}
+            for appid in wishlist.get("appids", [])
+            if str(appid) not in tracked_appids
+        ]
+        self.checker.check_display_prices(display_games)
+        if added:
+            self._update_status(f"Added {len(added)} wishlist game(s) to tracking")
+            self._refresh_prices()
+
+    def _on_wishlist_tracking_changed(self, added):
+        self.tracked_page.refresh_cards()
+        if added:
+            self._refresh_prices()
+
+    def _on_wishlist_account_changed(self, linked):
+        self.nav_buttons[3].setText("  Wishlist" if linked else "  Link Steam Wishlist")
+
     def _on_price_fetched(self, appid, edition, price_info):
         self.tracked_page.update_card_price(appid, edition, price_info)
+        self.link_steam_page.update_card_price(appid, edition, price_info)
 
     def _refresh_prices(self):
         self._update_status("Checking prices...")

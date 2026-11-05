@@ -104,3 +104,32 @@ class PriceChecker(QObject):
                 self.status_update.emit(f"Now tracking: {actual_name} — {format_price(price_info['price_final'], symbol)}")
         t = threading.Thread(target=_check, daemon=True)
         t.start()
+
+    def check_display_prices(self, games):
+        if not games:
+            return
+
+        def _check():
+            cc = self.config.get("cc", "US")
+            last_prices = self.config.get("last_prices", {})
+            for game in games:
+                appid = str(game["appid"])
+                edition = game.get("edition", "Standard Edition")
+                price_info = fetch_price_for_game(appid, edition, cc)
+                if not price_info:
+                    self.price_fetched.emit(appid, edition, {"error": True})
+                    continue
+                key = f"{appid}_{edition}_{cc}"
+                last_prices[key] = {
+                    "on_sale": price_info["on_sale"],
+                    "discount_pct": price_info["discount_pct"],
+                    "price_final": price_info["price_final"],
+                    "price_original": price_info["price_original"],
+                    "is_free": price_info.get("is_free", False),
+                    "symbol": price_info["symbol"],
+                }
+                self.price_fetched.emit(appid, edition, last_prices[key])
+            self.config["last_prices"] = last_prices
+            save_config(self.config)
+
+        threading.Thread(target=_check, daemon=True).start()

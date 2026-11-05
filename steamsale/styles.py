@@ -41,6 +41,59 @@ QLabel#sectionLabel {
     letter-spacing: 1.5px;
 }
 
+QWidget#unlinkConfirmOverlay {
+    background-color: rgba(0, 0, 0, 170);
+}
+
+QFrame#unlinkConfirmPanel {
+    background-color: #172131;
+    border: 1px solid #354861;
+    border-radius: 8px;
+}
+
+QLabel#unlinkConfirmTitle {
+    color: #ffffff;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+QLabel#unlinkConfirmText {
+    color: #c7d5e0;
+    font-size: 13px;
+}
+
+QPushButton#confirmUnlinkYes {
+    color: #10200b;
+    background-color: #a4d65e;
+    border: 1px solid #a4d65e;
+    border-radius: 5px;
+    padding: 8px 22px;
+    font-weight: bold;
+}
+
+QPushButton#confirmUnlinkYes:hover {
+    color: #10200b;
+    background-color: #b8ed70;
+    border: 1px solid #a4d65e;
+    border-radius: 5px;
+}
+
+QPushButton#confirmUnlinkNo {
+    color: #ffffff;
+    background-color: #b83f46;
+    border: 1px solid #d85b62;
+    border-radius: 5px;
+    padding: 8px 22px;
+    font-weight: bold;
+}
+
+QPushButton#confirmUnlinkNo:hover {
+    color: #ffffff;
+    background-color: #d04b53;
+    border: 1px solid #d85b62;
+    border-radius: 5px;
+}
+
 QLabel#gameNameLabel {
     color: #ffffff;
     font-size: 15px;
@@ -139,12 +192,15 @@ QLabel#typeBadgeLabel {
     letter-spacing: 0.5px;
 }
 
-QLabel#toastLabel {
-    background-color: #1a2640;
-    color: #ffffff;
-    border: 1px solid rgba(102, 192, 244, 0.4);
-    border-radius: 8px;
-    padding: 14px 28px;
+QFrame#toastFrame {
+    background-color: #1b2838;
+    border: 1px solid #3a6a89;
+    border-radius: 10px;
+}
+
+QLabel#toastMessage {
+    color: #e6edf5;
+    background: transparent;
     font-size: 13px;
     font-weight: 600;
 }
@@ -248,6 +304,22 @@ QPushButton#trackBtn:hover {
 QPushButton#trackBtn:pressed {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
         stop:0 #94c64e, stop:1 #6ca332);
+}
+
+QPushButton#unlinkBtn {
+    background-color: #1a2236;
+    color: #aab6c5;
+    border: 1px solid #2a3e58;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+QPushButton#unlinkBtn:hover {
+    color: #ff8388;
+    border-color: #c64e55;
+    background-color: #2b1c2a;
 }
 
 QPushButton#browseBtn, QPushButton#testBtn {

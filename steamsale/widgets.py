@@ -3,7 +3,7 @@ import threading
 import urllib.request
 
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QCheckBox, QFrame,
     QGraphicsDropShadowEffect, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject, QPoint, QSize
@@ -71,8 +71,9 @@ class ImageLoader(QObject):
 
 class GameCard(QFrame):
     remove_clicked = pyqtSignal(str, str)
+    tracking_toggled = pyqtSignal(str, bool)
 
-    def __init__(self, appid, name, edition, price_info=None):
+    def __init__(self, appid, name, edition, price_info=None, removable=True, trackable=False, tracking_enabled=True):
         super().__init__()
         self.appid = appid
         self.edition = edition
@@ -107,16 +108,30 @@ class GameCard(QFrame):
         self.right_layout.setSpacing(16)
         self.right_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.price_widget = None
-        self._update_price_display(price_info)
+        if trackable:
+            self.track_checkbox = QCheckBox("Track")
+            self.track_checkbox.setChecked(tracking_enabled)
+            self.track_checkbox.setCursor(QCursor(Qt.PointingHandCursor))
+            self.track_checkbox.setToolTip("Track price changes for this wishlist game")
+            self.track_checkbox.toggled.connect(
+                lambda checked: self.tracking_toggled.emit(self.appid, checked)
+            )
+            self.right_layout.addWidget(self.track_checkbox, 0, Qt.AlignVCenter)
 
-        remove_btn = QPushButton("\u2715")
-        remove_btn.setObjectName("dangerBtn")
-        remove_btn.setFixedSize(36, 36)
-        remove_btn.setCursor(QCursor(Qt.PointingHandCursor))
-        remove_btn.setToolTip("Remove from tracking")
-        remove_btn.clicked.connect(lambda: self.remove_clicked.emit(self.appid, self.edition))
-        self.right_layout.addWidget(remove_btn, 0, Qt.AlignVCenter)
+        self.price_widget = None
+        if price_info:
+            self.update_price(price_info)
+        else:
+            self._update_price_display(None)
+
+        if removable:
+            remove_btn = QPushButton("\u2715")
+            remove_btn.setObjectName("dangerBtn")
+            remove_btn.setFixedSize(36, 36)
+            remove_btn.setCursor(QCursor(Qt.PointingHandCursor))
+            remove_btn.setToolTip("Remove from tracking")
+            remove_btn.clicked.connect(lambda: self.remove_clicked.emit(self.appid, self.edition))
+            self.right_layout.addWidget(remove_btn, 0, Qt.AlignVCenter)
 
         layout.addLayout(self.right_layout)
 
